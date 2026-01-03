@@ -8,10 +8,13 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.0.0" />
+    <PackageReference Include="Scrutor" Version="4.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Controllers\" />
+    <ProjectReference Include="..\Converge.Configuration.Application\Converge.Configuration.Application.csproj" />
+    <ProjectReference Include="..\Converge.Configuration.Persistence\Converge.Configuration.Persistence.csproj" />
   </ItemGroup>
 
 </Project>
