@@ -1,0 +1,162 @@
+{
+  "info": {
+    "_postman_id": "b6a8f8c8-1c2a-4a2b-9f0a-9c4d6b6f9e7d",
+    "name": "Configuration Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Postman collection for configuration-service (Create/Get/Update/Rollback). Use the variable {{baseUrl}} (e.g. https://localhost:5001)"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "correlationId",
+      "value": "test-corr-id",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "version",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Create Configuration",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Correlation-ID",
+            "value": "{{correlationId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"key\": \"site:title\",\n  \"value\": \"My Site\",\n  \"scope\": \"Global\",\n  \"tenantId\": null\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/config",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "config"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Effective Configuration (latest)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Correlation-ID",
+            "value": "{{correlationId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/config/site:title?tenantId={{tenantId}}&version={{version}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "config",
+            "site:title"
+          ],
+          "query": [
+            {
+              "key": "tenantId",
+              "value": "{{tenantId}}"
+            },
+            {
+              "key": "version",
+              "value": "{{version}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update Configuration",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Correlation-ID",
+            "value": "{{correlationId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"value\": \"My New Site\",\n  \"expectedVersion\": 1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/config/site:title",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "config",
+            "site:title"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Rollback Configuration",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Correlation-ID",
+            "value": "{{correlationId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"version\": 1,\n  \"tenantId\": null\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/config/site:title/rollback",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "config",
+            "site:title",
+            "rollback"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

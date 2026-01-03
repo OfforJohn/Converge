@@ -1,3 +1,6 @@
+using Converge.Configuration.Application.Handlers;
+using Converge.Configuration.Application.Handlers.Requests;
+using Converge.Configuration.Application.Handlers.Implementations;
 using Converge.Configuration.Services;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using System.Text.Json.Serialization;
@@ -16,6 +19,14 @@ builder.Services.AddControllers()
     });
 // Register in-memory config service for the API and tests
 builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
+
+// Register request dispatcher and handlers
+builder.Services.AddSingleton<IRequestDispatcher, RequestDispatcher>();
+// register all handlers
+builder.Services.AddTransient<IRequestHandler<GetConfigQuery, Converge.Configuration.DTOs.ConfigResponse?>, GetConfigHandler>();
+builder.Services.AddTransient<IRequestHandler<CreateConfigCommand, Converge.Configuration.DTOs.ConfigResponse>, CreateConfigHandler>();
+builder.Services.AddTransient<IRequestHandler<UpdateConfigCommand, Converge.Configuration.DTOs.ConfigResponse?>, UpdateConfigHandler>();
+builder.Services.AddTransient<IRequestHandler<RollbackConfigCommand, Converge.Configuration.DTOs.ConfigResponse?>, RollbackConfigHandler>();
 
 // Caching feature toggle (set Caching:Enabled=true in appsettings or environment to enable Redis caching)
 var cachingEnabled = builder.Configuration.GetValue<bool>("Caching:Enabled", false);
