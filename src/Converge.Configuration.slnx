@@ -1,3 +1,7 @@
 <Solution>
   <Project Path="Converge.Configuration.API/Converge.Configuration.API.csproj" Id="6de0dac2-bd69-40be-98e7-6dfe4c570f5f" />
+  <Project Path="Converge.Configuration.Application/Converge.Configuration.Application.csproj" Id="a079bfd0-056f-4f43-9c7f-704b5230c9d8" />
+  <Project Path="Converge.Configuration.Domain/Converge.Configuration.Domain.csproj" Id="4966e056-e656-40ac-b869-ea07c209c40b" />
+  <Project Path="Converge.Configuration.Persistence/Converge.Configuration.Persistence.csproj" Id="33688a15-3d7e-4dc1-adfb-8610a583e6f8" />
+  <Project Path="Converge.UnitTests/Converge.Configuration.UnitTests.csproj" Id="82e67b76-bbc9-43fa-8850-9ffb5f3cbf30" />
 </Solution>
