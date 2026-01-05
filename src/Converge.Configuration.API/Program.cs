@@ -16,12 +16,14 @@ builder.Services.AddControllers()
         // use case-insensitive enum converter so client may send "Global" or "global" or camelCase
         opts.JsonSerializerOptions.Converters.Add(new CaseInsensitiveEnumConverterFactory());
     });
-
 // Register in-memory config service for the API and tests
 builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
 
 // Register request dispatcher and handlers
-builder.Services.AddSingleton<IRequestDispatcher, RequestDispatcher>();
+builder.Services.AddSingleton<IRequestDispatcher, RequestDispatcher>(
+    );
+
+
 
 // register all handlers
 builder.Services.AddTransient<IRequestHandler<GetConfigQuery, Converge.Configuration.DTOs.ConfigResponse?>, GetConfigHandler>();
@@ -44,6 +46,23 @@ if (cachingEnabled)
     // Decorate with cached service (resolve IDistributedCache and inner service)
     builder.Services.Decorate<IConfigService, CachedConfigService>();
 }
+else
+{
+    // No caching: leave the plain in-memory service as the IConfigService implementation.
+}
+
+/*
+// Optional Postgres persistence wiring (disabled by default - enable with Persistence:UsePostgres=true)
+// To enable, set Persistence:UsePostgres=true and configure ConnectionStrings:Postgres in appsettings.
+// Ensure Converge.Configuration.Persistence project is referenced by the API project and builds.
+var usePostgres = builder.Configuration.GetValue<bool>("Persistence:UsePostgres", false);
+if (usePostgres)
+{
+    var connection = builder.Configuration.GetConnectionString("Postgres") ?? builder.Configuration["Persistence:PostgresConnection"] ?? throw new InvalidOperationException("Postgres connection string not configured.");
+    // builder.Services.AddDbContext<ConfigurationDbContext>(options => options.UseNpgsql(connection));
+    // builder.Services.AddScoped<IConfigurationRepository, EfConfigurationRepository>();
+}
+*/
 
 // Simple test authorization policies so Postman requests with no auth succeed in development.
 builder.Services.AddAuthorization(options =>
@@ -51,6 +70,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CanReadConfig", policy => policy.RequireAssertion(_ => true));
     options.AddPolicy("CanWriteConfig", policy => policy.RequireAssertion(_ => true));
 });
+
 
 var app = builder.Build();
 
@@ -63,10 +83,11 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
 app.MapControllers();
 
 app.Run();
+    

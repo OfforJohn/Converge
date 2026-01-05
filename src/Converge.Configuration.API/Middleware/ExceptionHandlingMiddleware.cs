@@ -1,58 +1,56 @@
 using System;
+using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 using Converge.Configuration.Application.Exceptions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Converge.Configuration.API.Middleware
 {
     public class ExceptionHandlingMiddleware
     {
         private readonly RequestDelegate _next;
+        private readonly ILogger<ExceptionHandlingMiddleware> _logger;
 
-        public ExceptionHandlingMiddleware(RequestDelegate next)
+        public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
         {
             _next = next;
+            _logger = logger;
         }
 
-        public async Task InvokeAsync(HttpContext context)
+        public async Task Invoke(HttpContext context)
         {
             try
             {
                 await _next(context);
             }
-            catch (ConfigurationAlreadyExistsException ex)
+            catch (Exception ex)
             {
-                await WriteError(context, StatusCodes.Status409Conflict, "ConfigurationAlreadyExists", ex.Message);
-            }
-            catch (VersionConflictException ex)
-            {
-                await WriteError(context, StatusCodes.Status409Conflict, "VersionConflict", ex.Message);
-            }
-            catch (ArgumentException ex)
-            {
-                await WriteError(context, StatusCodes.Status400BadRequest, "InvalidRequest", ex.Message);
-            }
-            catch (Exception)
-            {
-                await WriteError(context, StatusCodes.Status500InternalServerError, "InternalServerError", "An unexpected error occurred.");
+                _logger.LogError(ex, "Unhandled exception processing request");
+                await HandleExceptionAsync(context, ex);
             }
         }
 
-        private static async Task WriteError(HttpContext context, int statusCode, string errorCode, string message)
+        private static Task HandleExceptionAsync(HttpContext context, Exception ex)
         {
-            context.Response.StatusCode = statusCode;
-            context.Response.ContentType = "application/json";
-
-            var correlationId = context.Request.Headers["X-Correlation-ID"].ToString();
-
-            var response = new
+            var status = ex switch
             {
-                error = errorCode,
-                message,
-                correlationId
+                ConfigurationAlreadyExistsException => StatusCodes.Status409Conflict,
+                VersionConflictException => StatusCodes.Status409Conflict,
+                ArgumentException => StatusCodes.Status400BadRequest,
+                InvalidOperationException => StatusCodes.Status400BadRequest,
+                _ => StatusCodes.Status500InternalServerError
             };
 
-            await context.Response.WriteAsJsonAsync(response);
+            var payload = JsonSerializer.Serialize(new
+            {
+                error = ex.GetType().Name,
+                message = ex.Message
+            });
+
+            context.Response.ContentType = "application/json";
+            context.Response.StatusCode = status;
+            return context.Response.WriteAsync(payload);
         }
     }
 }
