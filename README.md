@@ -120,5 +120,4 @@ Contributing
 - Include unit/integration tests and, if changing schema, include an EF migration.
 
 License & contacts
-- See repository root for license.
-- For questions ping the Platform Backend / Shared Services team.
+Proprietary - ConvergeERP
