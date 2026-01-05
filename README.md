@@ -1,6 +1,6 @@
 # Converge Configuration Service
 
-Lightweight configuration management microservice supporting tenant/global scopes, versioning and rollback. This repository contains an ASP.NET Core Web API, an in-memory config service (default), a Redis cache decorator, and optional Postgres persistence wiring.
+Lightweight configuration management microservice supporting tenant/global scopes, versioning and rollback. This repository contains an ASP.NET Core Web API, an in-memory config service (default), a Redis cache decorator, and  Postgres persistence wiring.
 
 Goals
 - Tenant-scoped and global configuration
