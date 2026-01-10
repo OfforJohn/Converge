@@ -1,9 +1,18 @@
+﻿using System;
+using System.Linq;
+using Confluent.Kafka;
+using Converge.Configuration.Application.Events;
 using Converge.Configuration.Application.Handlers;
 using Converge.Configuration.Application.Handlers.Requests;
 using Converge.Configuration.Application.Handlers.Implementations;
 using Converge.Configuration.Services;
 using Converge.Configuration.API.Json;
 using Converge.Configuration.API.Middleware;
+using Converge.Configuration.Application.Services;
+using Converge.Configuration.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,14 +25,66 @@ builder.Services.AddControllers()
         // use case-insensitive enum converter so client may send "Global" or "global" or camelCase
         opts.JsonSerializerOptions.Converters.Add(new CaseInsensitiveEnumConverterFactory());
     });
+
+
+
 // Register in-memory config service for the API and tests
 builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
 
+// Configure Postgres DbContext for audit/event persistence if Persistence:UsePostgres=true
+var usePostgres = builder.Configuration.GetValue<bool>("Persistence:UsePostgres", false);
+// New flag: control whether to apply EF migrations automatically on startup
+var applyMigrationsOnStartup = builder.Configuration.GetValue<bool>("Persistence:ApplyMigrationsOnStartup", true);
+
+// Debug: print environment and any configuration keys containing "Postgres" so we can see what's actually loaded
+Console.WriteLine("ENVIRONMENT: " + builder.Environment.EnvironmentName);
+foreach (var kv in builder.Configuration.AsEnumerable()
+             .Where(kv => kv.Key.IndexOf("Postgres", StringComparison.OrdinalIgnoreCase) >= 0))
+{
+    Console.WriteLine($"{kv.Key} = {kv.Value}");
+}
+
+if (usePostgres)
+{
+    var connection =
+        builder.Configuration.GetConnectionString("Postgres")
+        ?? builder.Configuration["Persistence:PostgresConnection"]
+        ?? throw new InvalidOperationException("Postgres connection string not configured");
+    builder.Services.AddDbContext<ConfigurationDbContext>(opt =>
+    {
+        // Configure Npgsql provider with the connection string
+        opt.UseNpgsql(connection);
+
+
+
+
+
+
+        // Enable sensitive data logging and detailed errors in development so EF Core will
+        // include parameter values and richer error messages in the logs. This helps when
+        // debugging SQL and seeing actual input values (e.g. payloads) that are sent to the DB.
+        // IMPORTANT: Do NOT enable this in production — it can expose PII and secrets in logs.
+        if (builder.Environment.IsDevelopment())
+        {
+            // Shows parameter values in EF Core logs (DEV ONLY)
+            opt.EnableSensitiveDataLogging();
+            // Enable more detailed EF exceptions (DEV ONLY)
+            opt.EnableDetailedErrors();
+        }
+    });
+
+    builder.Services.AddScoped<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
+    builder.Services.AddScoped<IEventPublisher, OutboxEventPublisher>();
+}
+else
+{
+    // Fallback to console implementations for dev
+    builder.Services.AddSingleton<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
+    builder.Services.AddSingleton<IEventPublisher, Converge.Configuration.Application.Events.OutboxEventPublisher>();
+}
+
 // Register request dispatcher and handlers
-builder.Services.AddSingleton<IRequestDispatcher, RequestDispatcher>(
-    );
-
-
+builder.Services.AddScoped<IRequestDispatcher, RequestDispatcher>();
 
 // register all handlers
 builder.Services.AddTransient<IRequestHandler<GetConfigQuery, Converge.Configuration.DTOs.ConfigResponse?>, GetConfigHandler>();
@@ -51,19 +112,6 @@ else
     // No caching: leave the plain in-memory service as the IConfigService implementation.
 }
 
-/*
-// Optional Postgres persistence wiring (disabled by default - enable with Persistence:UsePostgres=true)
-// To enable, set Persistence:UsePostgres=true and configure ConnectionStrings:Postgres in appsettings.
-// Ensure Converge.Configuration.Persistence project is referenced by the API project and builds.
-var usePostgres = builder.Configuration.GetValue<bool>("Persistence:UsePostgres", false);
-if (usePostgres)
-{
-    var connection = builder.Configuration.GetConnectionString("Postgres") ?? builder.Configuration["Persistence:PostgresConnection"] ?? throw new InvalidOperationException("Postgres connection string not configured.");
-    // builder.Services.AddDbContext<ConfigurationDbContext>(options => options.UseNpgsql(connection));
-    // builder.Services.AddScoped<IConfigurationRepository, EfConfigurationRepository>();
-}
-*/
-
 // Simple test authorization policies so Postman requests with no auth succeed in development.
 builder.Services.AddAuthorization(options =>
 {
@@ -71,8 +119,83 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CanWriteConfig", policy => policy.RequireAssertion(_ => true));
 });
 
+Console.WriteLine("Effective Postgres: " + builder.Configuration.GetConnectionString("Postgres"));
+
+// Apply pending EF Core migrations before registering Kafka to avoid background host services
+// attempting to use the database or Kafka before migrations are applied.
+if (usePostgres)
+{
+    if (applyMigrationsOnStartup)
+    {
+        try
+        {
+            using var tempProvider = builder.Services.BuildServiceProvider();
+            using var scope = tempProvider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
+            Console.WriteLine("Applying pending EF Core migrations...");
+            db.Database.Migrate();
+            Console.WriteLine("Database migrations applied.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to apply migrations: {ex}");
+        }
+    }
+    else
+    {
+        Console.WriteLine("Skipping applying EF Core migrations on startup (Persistence:ApplyMigrationsOnStartup=false).");
+    }
+
+    // Now it's safe to register KafkaDispatcher; if migrations failed above we'll still avoid
+    // registering Kafka if no bootstrap servers are configured.
+    var kafkaBootstrap = builder.Configuration["Kafka:BootstrapServers"];
+    if (!string.IsNullOrEmpty(kafkaBootstrap))
+    {
+        var producerConfig = new ProducerConfig { BootstrapServers = kafkaBootstrap };
+        builder.Services.AddSingleton(producerConfig);
+        builder.Services.AddHostedService<KafkaDispatcher>(sp => new KafkaDispatcher(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<KafkaDispatcher>>(),
+            producerConfig,
+            sp.GetRequiredService<IConfiguration>()));
+    }
+}
 
 var app = builder.Build();
+
+
+
+// 🔍 TEMP DB DIAGNOSTIC — REMOVE AFTER DEBUGGING
+using (var scope = app.Services.CreateScope())
+{
+    var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    var connectionString =
+        configuration.GetConnectionString("Postgres")
+        ?? configuration["Persistence:PostgresConnection"];
+
+    await using var conn = new Npgsql.NpgsqlConnection(connectionString);
+    await conn.OpenAsync();
+
+    await using var cmd = new Npgsql.NpgsqlCommand(@"
+        SELECT
+          inet_server_addr(),
+          inet_server_port(),
+          pg_postmaster_start_time(),
+          version();
+    ", conn);
+
+    await using var reader = await cmd.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        Console.WriteLine(
+            $"DB DEBUG => " +
+            $"ADDR={reader.GetValue(0)}, " +
+            $"PORT={reader.GetInt32(1)}, " +
+            $"START={reader.GetDateTime(2)}, " +
+            $"VER={reader.GetString(3)}");
+    }
+}
+
 
 // Configure the HTTP request pipeline.
 // Add exception handling middleware early to translate domain exceptions into HTTP responses.
@@ -85,9 +208,10 @@ if (app.Environment.IsDevelopment())
 
 //app.UseHttpsRedirection();
 
+
+
 app.UseAuthorization();
 
 app.MapControllers();
 
 app.Run();
-    
