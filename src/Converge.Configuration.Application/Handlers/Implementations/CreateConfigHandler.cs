@@ -4,6 +4,7 @@ using Converge.Configuration.DTOs;
 using Converge.Configuration.Services;
 using Converge.Configuration.Application.Services;
 using Converge.Configuration.Application.Events;
+using System.ComponentModel.DataAnnotations;
 
 namespace Converge.Configuration.Application.Handlers.Implementations
 {
@@ -31,40 +32,19 @@ namespace Converge.Configuration.Application.Handlers.Implementations
 
         public async Task<ConfigResponse> Handle(CreateConfigCommand request)
         {
-            var before = null as object;
+            // Validate the request
+            request.Request.Validate();
 
-            // Do not trust tenant id supplied by client. If the config scope is Tenant,
-            // generate a server-side TenantId for tracking. For Global scope, TenantId stays null.
-            var incoming = request.Request;
-            CreateConfigRequest toCreate;
-
-            if (incoming.Scope == ConfigurationScope.Tenant)
+            // Ensure TenantId is generated for Tenant and Company scopes
+            if ((request.Request.Scope == ConfigurationScope.Tenant || request.Request.Scope == ConfigurationScope.Company) && request.Request.TenantId == null)
             {
-                toCreate = new CreateConfigRequest
-                {
-                    Key = incoming.Key,
-                    Value = incoming.Value,
-                    Scope = incoming.Scope,
-                    // generate a new tenant id on server-side
-                    TenantId = System.Guid.NewGuid()
-                };
-            }
-            else
-            {
-                // For Global scope, keep TenantId null
-                toCreate = new CreateConfigRequest
-                {
-                    Key = incoming.Key,
-                    Value = incoming.Value,
-                    Scope = incoming.Scope,
-                    TenantId = null
-                };
+                request.Request.TenantId = System.Guid.NewGuid();
             }
 
-            var created = await _service.CreateAsync(toCreate, request.CorrelationId);
+            var created = await _service.CreateAsync(request.Request, request.CorrelationId);
 
             // Audit and publish
-            await _audit.AuditAsync("Create", created.Key, before, created, null, created.TenantId, request.CorrelationId);
+            await _audit.AuditAsync("Create", created.Key, null, created, null, created.TenantId, request.CorrelationId);
             await _publisher.PublishAsync("ConfigCreated", created, request.CorrelationId);
 
             return created;

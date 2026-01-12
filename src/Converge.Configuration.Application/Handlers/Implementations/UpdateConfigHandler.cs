@@ -30,16 +30,16 @@ namespace Converge.Configuration.Application.Handlers.Implementations
 
         public async Task<ConfigResponse?> Handle(UpdateConfigCommand request)
         {
-            // 1️⃣ Validate request
+            // Validate the request
             request.Request.Validate();
 
-            // 2️⃣ Generate TenantId if needed
-            if (request.Request.Scope == ConfigurationScope.Company || request.Request.Scope == ConfigurationScope.Tenant)
+            // Ensure TenantId is generated for Tenant and Company scopes
+            if ((request.Request.Scope == ConfigurationScope.Tenant || request.Request.Scope == ConfigurationScope.Company) && request.Request.TenantId == null)
             {
-                request.Request.TenantId = Guid.NewGuid(); // server-generated
+                request.Request.TenantId = Guid.NewGuid();
             }
 
-            // 3️⃣ Read current config for audit
+            // Read current config for audit
             var before = await _service.GetEffectiveAsync(
                 request.Key,
                 request.Request.TenantId,
@@ -47,14 +47,14 @@ namespace Converge.Configuration.Application.Handlers.Implementations
                 request.CorrelationId
             );
 
-            // 4️⃣ Update config
+            // Update config
             var updated = await _service.UpdateAsync(
                 request.Key,
                 request.Request,
                 request.CorrelationId
             );
 
-            // 5️⃣ Audit and publish event
+            // Audit and publish event
             if (updated != null)
             {
                 await _audit.AuditAsync(

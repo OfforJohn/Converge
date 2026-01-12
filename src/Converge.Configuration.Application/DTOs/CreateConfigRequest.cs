@@ -22,34 +22,31 @@ namespace Converge.Configuration.DTOs
         public ConfigurationScope Scope { get; set; }
 
         /// <summary>
-        /// Required for Company scope
+        /// Required for Tenant and Company scopes
         /// </summary>
         public string? Domain { get; set; }
 
-
         /// <summary>
-        /// TenantId is server-generated for Company and Tenant scopes
+        /// TenantId is server-generated for Tenant and Company scopes
         /// </summary>
-        internal Guid? TenantId { get; set; } // ✅ make nullable
+        internal Guid? TenantId { get; set; }
 
         /// <summary>
-        /// Validates domain presence for Company scope
+        /// Validates the request based on the scope
         /// </summary>
         public void Validate()
         {
             switch (Scope)
             {
                 case ConfigurationScope.Company:
-                    if (string.IsNullOrWhiteSpace(Domain))
-                        throw new ValidationException("Domain is required for Company scope.");
-                    break;
-
                 case ConfigurationScope.Tenant:
-                    // TenantId will be provided/generated server-side if needed
+                    if (string.IsNullOrWhiteSpace(Domain))
+                        throw new ValidationException("Domain is required for Tenant and Company scopes.");
                     break;
 
                 case ConfigurationScope.Global:
-                    // No extra validation
+                    if (!string.IsNullOrWhiteSpace(Domain))
+                        throw new ValidationException("Domain is not allowed for Global scope.");
                     break;
             }
         }
