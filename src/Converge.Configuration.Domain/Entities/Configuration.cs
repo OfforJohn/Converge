@@ -40,6 +40,8 @@ namespace ConvergeErp.Configuration.Domain.Entities
             TenantId = scope == ConfigurationScope.Global
     ? Guid.Empty
     : tenantId!.Value;
+           // CompanyId = null;
+
 
             Version = version;
 

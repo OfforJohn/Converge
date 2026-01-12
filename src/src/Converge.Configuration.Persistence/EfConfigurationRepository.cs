@@ -39,14 +39,10 @@ namespace Converge.Configuration.Persistence
 
         public async Task<Configuration?> GetByKeyVersionAsync(string key, Guid? tenantId, int version)
         {
-            // If tenantId is provided, filter by that tenant. If null, don't filter by tenant (search across tenants and global)
-            var q = _db.Configurations.AsQueryable()
-                .Where(c => EF.Property<string>(c, "Key") == key && EF.Property<int>(c, "Version") == version);
-
-            if (tenantId.HasValue)
-                q = q.Where(c => EF.Property<Guid>(c, "TenantId") == tenantId.Value);
-
-            return await q.FirstOrDefaultAsync();
+            var t = tenantId ?? Guid.Empty;
+            return await _db.Configurations
+                .Where(c => EF.Property<string>(c, "Key") == key && EF.Property<Guid>(c, "TenantId") == t && EF.Property<int>(c, "Version") == version)
+                .FirstOrDefaultAsync();
         }
 
         public async Task<int> GetMaxVersionAsync(string key)
@@ -74,13 +70,8 @@ namespace Converge.Configuration.Persistence
 
         public async Task<bool> ExistsVersionAsync(string key, Guid? tenantId, int version)
         {
-            var q = _db.Configurations.AsQueryable()
-                .Where(c => EF.Property<string>(c, "Key") == key && EF.Property<int>(c, "Version") == version);
-
-            if (tenantId.HasValue)
-                q = q.Where(c => EF.Property<Guid>(c, "TenantId") == tenantId.Value);
-
-            return await q.AnyAsync();
+            var t = tenantId ?? Guid.Empty;
+            return await _db.Configurations.AnyAsync(c => EF.Property<string>(c, "Key") == key && EF.Property<Guid>(c, "TenantId") == t && EF.Property<int>(c, "Version") == version);
         }
     }
 }

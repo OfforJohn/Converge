@@ -5,15 +5,15 @@ namespace Converge.Configuration.Application.Exceptions
     public class VersionConflictException : Exception
     {
         public string Key { get; }
-        public int Expected { get; }
-        public int Actual { get; }
+        public int ExpectedVersion { get; }
+        public int ActualVersion { get; }
 
-        public VersionConflictException(string key, int expected, int actual)
-            : base($"Version conflict for '{key}'. Expected {expected}, actual {actual}.")
+        public VersionConflictException(string key, int expectedVersion, int actualVersion)
+            : base($"Version conflict for key '{key}': expected {expectedVersion}, actual {actualVersion}.")
         {
             Key = key;
-            Expected = expected;
-            Actual = actual;
+            ExpectedVersion = expectedVersion;
+            ActualVersion = actualVersion;
         }
     }
 }

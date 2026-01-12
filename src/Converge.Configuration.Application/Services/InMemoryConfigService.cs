@@ -155,9 +155,12 @@ namespace Converge.Configuration.Services
 
             lock (list)
             {
-                // Find current active config for this key (most recent active entry)
+                // Find active config for SAME scope + tenant
                 var active = list
-                    .Where(e => e.Active)
+                    .Where(e =>
+                        e.Active &&
+                        e.Scope == request.Scope &&
+                        e.TenantId == request.TenantId)
                     .OrderByDescending(e => e.Version)
                     .FirstOrDefault();
 
@@ -175,7 +178,11 @@ namespace Converge.Configuration.Services
                 }
 
                 // Deprecate active version
-                list.RemoveAll(e => e.Version == active.Version && e.Scope == active.Scope && e.TenantId == active.TenantId);
+                list.RemoveAll(e =>
+                    e.Version == active.Version &&
+                    e.Scope == active.Scope &&
+                    e.TenantId == active.TenantId);
+
                 list.Add(active with { Active = false });
 
                 var newVersion = list.Max(e => e.Version) + 1;
