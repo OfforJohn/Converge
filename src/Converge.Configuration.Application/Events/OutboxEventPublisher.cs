@@ -18,15 +18,27 @@ namespace Converge.Configuration.Application.Events
 
         public async Task PublishAsync(string eventName, object payload, string correlationId)
         {
+            // Extract properties from payload if it's a known type
             var entry = new OutboxEvent
             {
+                Id = Guid.NewGuid(),
                 EventType = eventName,
-                Payload = JsonSerializer.Serialize(payload),
                 CorrelationId = correlationId,
                 OccurredAt = DateTime.UtcNow,
                 Dispatched = false,
                 Attempts = 0
             };
+
+            // Try to extract Key and Value from payload
+            if (payload is ConfigurationItem config)
+            {
+                entry.Key = config.Key;
+                entry.Value = config.Value;
+                entry.Scope = (int)config.Scope;
+                entry.TenantId = config.TenantId;
+                entry.CompanyId = config.CompanyId;
+                entry.Version = config.Version;
+            }
 
             _db.OutboxEvents.Add(entry);
             await _db.SaveChangesAsync();

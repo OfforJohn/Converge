@@ -47,7 +47,21 @@ namespace Converge.Configuration.Application.Events
                     {
                         try
                         {
-                            var msg = new Message<string, string> { Key = ev.CorrelationId, Value = ev.Payload };
+                            // Serialize the event data to JSON for Kafka message
+                            var payload = System.Text.Json.JsonSerializer.Serialize(new
+                            {
+                                ev.Id,
+                                ev.Key,
+                                ev.Value,
+                                ev.Scope,
+                                ev.TenantId,
+                                ev.CompanyId,
+                                ev.Version,
+                                ev.EventType,
+                                ev.CorrelationId,
+                                ev.OccurredAt
+                            });
+                            var msg = new Message<string, string> { Key = ev.CorrelationId, Value = payload };
                             var res = await producer.ProduceAsync(_topic, msg, stoppingToken);
 
                             ev.Dispatched = true;

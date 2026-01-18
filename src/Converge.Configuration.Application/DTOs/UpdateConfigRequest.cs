@@ -9,6 +9,7 @@ namespace Converge.Configuration.DTOs
         public int? ExpectedVersion { get; set; }
         public ConfigurationScope Scope { get; set; }
         public Guid? TenantId { get; set; }
+        public Guid? CompanyId { get; set; }
 
         /// <summary>
         /// Required for Tenant and Company scopes

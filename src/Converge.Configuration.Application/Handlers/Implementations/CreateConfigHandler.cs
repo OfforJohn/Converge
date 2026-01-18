@@ -43,9 +43,9 @@ namespace Converge.Configuration.Application.Handlers.Implementations
 
             var created = await _service.CreateAsync(request.Request, request.CorrelationId);
 
-            // Audit and publish
+            // Audit only - OutboxEvent is already created by DbConfigService via ConfigEntityFactory
             await _audit.AuditAsync("Create", created.Key, null, created, null, created.TenantId, request.CorrelationId);
-            await _publisher.PublishAsync("ConfigCreated", created, request.CorrelationId);
+            // Note: Event publishing removed here since DbConfigService.CreateAsync() already adds to OutboxEvents table
 
             return created;
         }

@@ -28,9 +28,6 @@ builder.Services.AddControllers()
 
 
 
-// Register in-memory config service for the API and tests
-builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
-
 // Configure Postgres DbContext for audit/event persistence if Persistence:UsePostgres=true
 var usePostgres = builder.Configuration.GetValue<bool>("Persistence:UsePostgres", false);
 // New flag: control whether to apply EF migrations automatically on startup
@@ -75,12 +72,18 @@ if (usePostgres)
 
     builder.Services.AddScoped<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddScoped<IEventPublisher, OutboxEventPublisher>();
+    
+    // Register DbConfigService when using Postgres
+    builder.Services.AddScoped<IConfigService, DbConfigService>();
 }
 else
 {
     // Fallback to console implementations for dev
     builder.Services.AddSingleton<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddSingleton<IEventPublisher, Converge.Configuration.Application.Events.OutboxEventPublisher>();
+    
+    // Register in-memory config service when NOT using Postgres
+    builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
 }
 
 // Register request dispatcher and handlers
@@ -160,6 +163,7 @@ if (usePostgres)
             sp.GetRequiredService<IConfiguration>()));
     }
 }
+// builder.Services.AddApplicationInsightsTelemetry(); // Package not installed
 
 var app = builder.Build();
 

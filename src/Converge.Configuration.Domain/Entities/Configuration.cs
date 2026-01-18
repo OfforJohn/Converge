@@ -5,9 +5,11 @@ namespace ConvergeErp.Configuration.Domain.Entities
 {
     public class Configuration : BaseEntity
     {
+
         public string Key { get; private set; } = null!;
         public string Value { get; private set; } = null!;
         public ConfigurationScope Scope { get; private set; }
+        public Guid? CompanyId { get; private set; }
 
         // ✅ Renamed to avoid BaseEntity.Status collision
         public ConfigurationStatus ConfigStatus { get; private set; }
@@ -19,6 +21,7 @@ namespace ConvergeErp.Configuration.Domain.Entities
             string value,
             ConfigurationScope scope,
             Guid? tenantId,
+            Guid? companyId,
             int version,
             Guid creatorId)
         {
@@ -38,15 +41,11 @@ namespace ConvergeErp.Configuration.Domain.Entities
             Value = value;
             Scope = scope;
             TenantId = scope == ConfigurationScope.Global
-    ? Guid.Empty
-    : tenantId!.Value;
-           // CompanyId = null;
-
-
+                ? Guid.Empty
+                : tenantId!.Value;
+            CompanyId = scope == ConfigurationScope.Company ? companyId : null;
             Version = version;
-
             ConfigStatus = ConfigurationStatus.Active;
-
             CreatorId = creatorId;
             CreatedAt = DateTime.UtcNow;
         }

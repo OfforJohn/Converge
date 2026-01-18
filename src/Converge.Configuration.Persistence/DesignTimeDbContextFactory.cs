@@ -13,7 +13,7 @@ namespace Converge.Configuration.Persistence
 
             // Prefer environment variable CONVERGE_DB for CI/Dev overrides, otherwise fall back to local dev connection
             var connectionString = Environment.GetEnvironmentVariable("CONVERGE_DB")
-                                   ?? "Host=localhost;Port=5432;Database=postgres;Username=myuser;Password=secret";
+                                   ?? "Host=localhost;Port=5432;Database=mydb;Username=postgres;Password=secret";
 
             optionsBuilder.UseNpgsql(connectionString);
             optionsBuilder.EnableSensitiveDataLogging();

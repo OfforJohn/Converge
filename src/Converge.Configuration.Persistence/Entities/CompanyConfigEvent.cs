@@ -1,12 +1,12 @@
-﻿using System;
+using System;
 
 namespace Converge.Configuration.Persistence.Entities
 {
     /// <summary>
-    /// Outbox event for reliable event publishing (Outbox Pattern)
+    /// Tenant/Company-specific config event for reliable event publishing
     /// Events: ConfigCreated, ConfigUpdated, ConfigRolledBack
     /// </summary>
-    public class OutboxEvent
+    public class CompanyConfigEvent
     {
         public Guid Id { get; set; }
         

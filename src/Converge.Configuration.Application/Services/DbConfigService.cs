@@ -10,6 +10,8 @@ using Converge.Configuration.Services;
 // Alias ambiguous enums
 using PersistenceScope = Converge.Configuration.Persistence.Entities.ConfigurationScope;
 using DtoScope = Converge.Configuration.DTOs.ConfigurationScope;
+// Add using for Domain entity
+using DomainEntity = Converge.Configuration.Persistence.Entities.Domain;
 
 namespace Converge.Configuration.Application.Services
 {
@@ -24,12 +26,16 @@ namespace Converge.Configuration.Application.Services
 
         private PersistenceScope ToPersistenceScope(DtoScope dtoScope)
         {
-            return dtoScope == DtoScope.Tenant ? PersistenceScope.Tenant : PersistenceScope.Global;
+            if (dtoScope == DtoScope.Tenant) return PersistenceScope.Tenant;
+            if (dtoScope == DtoScope.Company) return PersistenceScope.Company;
+            return PersistenceScope.Global;
         }
 
         private DtoScope FromPersistenceScope(PersistenceScope scope)
         {
-            return scope == PersistenceScope.Tenant ? DtoScope.Tenant : DtoScope.Global;
+            if (scope == PersistenceScope.Tenant) return DtoScope.Tenant;
+            if (scope == PersistenceScope.Company) return DtoScope.Company;
+            return DtoScope.Global;
         }
 
         public async Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, int? version, string correlationId)
@@ -37,19 +43,22 @@ namespace Converge.Configuration.Application.Services
             if (version.HasValue)
             {
                 var specific = await _db.ConfigurationItems
-                    .Where(c => c.Key == key && c.Version == version && c.TenantId == tenantId)
+                    .Where(c => c.Key == key && c.Version == version.Value && c.TenantId == tenantId)
                     .OrderByDescending(c => c.Version)
                     .FirstOrDefaultAsync();
 
                 if (specific == null) return null;
 
+                var scope = FromPersistenceScope(specific.Scope);
                 return new ConfigResponse
                 {
                     Key = specific.Key,
                     Value = specific.Value,
-                    Scope = FromPersistenceScope(specific.Scope),
+                    Scope = scope,
                     TenantId = specific.TenantId,
-                    Version = specific.Version
+                    CompanyId = scope == DtoScope.Company ? specific.CompanyId : null,
+                    Version = specific.Version ?? 0,
+                    Domain = scope == DtoScope.Global ? "Global" : null
                 };
             }
 
@@ -69,7 +78,29 @@ namespace Converge.Configuration.Application.Services
                         Value = tenantConfig.Value,
                         Scope = DtoScope.Tenant,
                         TenantId = tenantConfig.TenantId,
-                        Version = tenantConfig.Version
+                        CompanyId = null,
+                        Version = tenantConfig.Version ?? 0,
+                        Domain = null
+                    };
+                }
+
+                // company override
+                var companyConfig = await _db.ConfigurationItems
+                    .Where(c => c.Key == key && c.Scope == PersistenceScope.Company && c.TenantId == tenantId && c.Status == "ACTIVE")
+                    .OrderByDescending(c => c.Version)
+                    .FirstOrDefaultAsync();
+
+                if (companyConfig != null)
+                {
+                    return new ConfigResponse
+                    {
+                        Key = companyConfig.Key,
+                        Value = companyConfig.Value,
+                        Scope = DtoScope.Company,
+                        TenantId = companyConfig.TenantId,
+                        CompanyId = companyConfig.CompanyId,
+                        Version = companyConfig.Version ?? 0,
+                        Domain = null
                     };
                 }
             }
@@ -87,7 +118,9 @@ namespace Converge.Configuration.Application.Services
                 Value = globalConfig.Value,
                 Scope = DtoScope.Global,
                 TenantId = globalConfig.TenantId,
-                Version = globalConfig.Version
+                CompanyId = null,
+                Version = globalConfig.Version ?? 0,
+                Domain = "Global"
             };
         }
 
@@ -99,8 +132,13 @@ namespace Converge.Configuration.Application.Services
             if (string.IsNullOrWhiteSpace(request.Value))
                 throw new ArgumentException("Value is required", nameof(request.Value));
 
+            // Remove TenantId requirement for Company scope
             if (request.Scope == DtoScope.Tenant && request.TenantId == null)
                 throw new InvalidOperationException("TenantId is required for TENANT scoped config");
+
+            // Remove this check:
+            // if (request.Scope == DtoScope.Company && request.TenantId == null)
+            //     throw new InvalidOperationException("TenantId is required for COMPANY scoped config");
 
             if (request.Scope == DtoScope.Global && request.TenantId != null)
                 throw new InvalidOperationException("TenantId must be null for GLOBAL scoped config");
@@ -109,6 +147,24 @@ namespace Converge.Configuration.Application.Services
 
             try
             {
+                // Save domain to Domain table if provided and not already present
+                Guid? domainId = null;
+                if (!string.IsNullOrWhiteSpace(request.Domain))
+                {
+                    var existingDomain = await _db.Set<DomainEntity>().FirstOrDefaultAsync(d => d.Name == request.Domain);
+                    if (existingDomain == null)
+                    {
+                        var newDomain = new DomainEntity { Id = Guid.NewGuid(), Name = request.Domain };
+                        _db.Set<DomainEntity>().Add(newDomain);
+                        await _db.SaveChangesAsync();
+                        domainId = newDomain.Id;
+                    }
+                    else
+                    {
+                        domainId = existingDomain.Id;
+                    }
+                }
+
                 var persistenceScope = ToPersistenceScope(request.Scope);
 
                 var existingActive = await _db.ConfigurationItems.FirstOrDefaultAsync(e => e.Status == "ACTIVE" && e.Scope == persistenceScope && e.TenantId == request.TenantId && e.Key == request.Key);
@@ -119,31 +175,27 @@ namespace Converge.Configuration.Application.Services
                 var maxVersion = await _db.ConfigurationItems.Where(e => e.Key == request.Key).MaxAsync(e => (int?)e.Version) ?? 0;
                 var newVersion = maxVersion + 1;
 
-                var item = new ConfigurationItem
-                {
-                    Key = request.Key,
-                    Value = request.Value,
-                    Scope = persistenceScope,
-                    TenantId = request.TenantId,
-                    Version = newVersion,
-                    Status = "ACTIVE",
-                    CreatedAt = DateTime.UtcNow
-                };
+                var generatedCompanyId = (request.Scope == DtoScope.Company) ? Guid.NewGuid() : (Guid?)null;
 
+                // Use ConfigEntityFactory to create all entities with shared properties
+                var (item, companyEvent, outboxEvent) = ConfigEntityFactory.CreateAllEntities(
+                    key: request.Key,
+                    value: request.Value,
+                    scope: persistenceScope,
+                    tenantId: request.TenantId,
+                    companyId: generatedCompanyId,
+                    version: newVersion,
+                    eventType: "ConfigCreated",
+                    correlationId: correlationId,
+                    domainId: domainId
+                );
+
+                // Always add to ConfigurationItems, regardless of scope
                 _db.ConfigurationItems.Add(item);
 
-                // Auditing removed - do not write AuditEntry
-
-                // write outbox event
-                _db.OutboxEvents.Add(new OutboxEvent
-                {
-                    EventType = "ConfigCreated",
-                    Payload = System.Text.Json.JsonSerializer.Serialize(item),
-                    CorrelationId = correlationId,
-                    OccurredAt = DateTime.UtcNow,
-                    Dispatched = false,
-                    Attempts = 0
-                });
+                // Always add to both event tables for consistency
+                _db.CompanyConfigEvents.Add(companyEvent);
+                _db.OutboxEvents.Add(outboxEvent);
 
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
@@ -154,16 +206,17 @@ namespace Converge.Configuration.Application.Services
                     Value = item.Value,
                     Scope = request.Scope,
                     TenantId = item.TenantId,
-                    Version = item.Version
+                    CompanyId = request.Scope == DtoScope.Company ? item.CompanyId : null,
+                    Version = item.Version ?? 0,
+                    Domain = request.Scope == DtoScope.Global ? "Global" : null
                 };
             }
-            catch
+            catch (Exception)
             {
                 await tx.RollbackAsync();
                 throw;
             }
         }
-
         public async Task<ConfigResponse?> UpdateAsync(string key, UpdateConfigRequest request, string correlationId)
         {
             if (string.IsNullOrWhiteSpace(request.Value))
@@ -182,9 +235,9 @@ namespace Converge.Configuration.Application.Services
 
                 if (active == null) return null;
 
-                if (request.ExpectedVersion.HasValue && request.ExpectedVersion.Value != active.Version)
+                if (request.ExpectedVersion.HasValue && request.ExpectedVersion.Value != (active.Version ?? 0))
                 {
-                    throw new Converge.Configuration.Application.Exceptions.VersionConflictException(key, request.ExpectedVersion.Value, active.Version);
+                    throw new Converge.Configuration.Application.Exceptions.VersionConflictException(key, request.ExpectedVersion.Value, active.Version ?? 0);
                 }
 
                 // Deprecate active
@@ -193,12 +246,17 @@ namespace Converge.Configuration.Application.Services
                 var maxVersion = await _db.ConfigurationItems.Where(e => e.Key == key).MaxAsync(e => (int?)e.Version) ?? 0;
                 var newVersion = maxVersion + 1;
 
+                var newCompanyId = (active.Scope == PersistenceScope.Company)
+                    ? (Guid?)(active.CompanyId ?? Guid.NewGuid())
+                    : null;
+
                 var newItem = new ConfigurationItem
                 {
                     Key = key,
                     Value = request.Value,
                     Scope = active.Scope,
                     TenantId = active.TenantId,
+                    CompanyId = newCompanyId,
                     Version = newVersion,
                     Status = "ACTIVE",
                     CreatedAt = DateTime.UtcNow
@@ -207,18 +265,41 @@ namespace Converge.Configuration.Application.Services
                 _db.ConfigurationItems.Update(active);
                 _db.ConfigurationItems.Add(newItem);
 
-                // Auditing removed - do not write AuditEntry
+                var updatedScope = FromPersistenceScope(newItem.Scope);
 
-                // outbox
-                _db.OutboxEvents.Add(new OutboxEvent
+                if (updatedScope == DtoScope.Company)
                 {
-                    EventType = "ConfigUpdated",
-                    Payload = System.Text.Json.JsonSerializer.Serialize(newItem),
-                    CorrelationId = correlationId,
-                    OccurredAt = DateTime.UtcNow,
-                    Dispatched = false,
-                    Attempts = 0
-                });
+                    _db.CompanyConfigEvents.Add(new CompanyConfigEvent
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = newItem.CompanyId!.Value,
+                        Key = newItem.Key,
+                        Value = newItem.Value,
+                        EventType = "ConfigUpdated",
+                        CorrelationId = correlationId,
+                        OccurredAt = DateTime.UtcNow,
+                        Dispatched = false,
+                        Attempts = 0
+                    });
+                }
+                else
+                {
+                    _db.OutboxEvents.Add(new OutboxEvent
+                    {
+                        Id = Guid.NewGuid(),
+                        Key = newItem.Key,
+                        Value = newItem.Value,
+                        Scope = (int)newItem.Scope,
+                        TenantId = newItem.TenantId,
+                        CompanyId = newItem.CompanyId,
+                        Version = newItem.Version ?? 0,
+                        EventType = "ConfigUpdated",
+                        CorrelationId = correlationId,
+                        OccurredAt = DateTime.UtcNow,
+                        Dispatched = false,
+                        Attempts = 0
+                    });
+                }
 
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
@@ -227,12 +308,14 @@ namespace Converge.Configuration.Application.Services
                 {
                     Key = newItem.Key,
                     Value = newItem.Value,
-                    Scope = FromPersistenceScope(newItem.Scope),
+                    Scope = updatedScope,
                     TenantId = newItem.TenantId,
-                    Version = newItem.Version
+                    CompanyId = updatedScope == DtoScope.Company ? newItem.CompanyId : null,
+                    Version = newItem.Version ?? 0,
+                    Domain = updatedScope == DtoScope.Global ? "Global" : null
                 };
             }
-            catch
+            catch (Exception)
             {
                 await tx.RollbackAsync();
                 throw;
@@ -245,11 +328,11 @@ namespace Converge.Configuration.Application.Services
 
             try
             {
-                var target = await _db.ConfigurationItems.FirstOrDefaultAsync(e => e.Key == key && e.Version == version && e.TenantId == tenantId);
+                var target = await _db.ConfigurationItems.FirstOrDefaultAsync(e => e.Key == key && e.Version == version && e.TenantId == (tenantId ?? Guid.Empty));
                 if (target == null) return null;
 
                 var active = await _db.ConfigurationItems
-                    .Where(e => e.Key == key && e.Status == "ACTIVE" && e.Scope == target.Scope && e.TenantId == tenantId)
+                    .Where(e => e.Key == key && e.Status == "ACTIVE" && e.Scope == target.Scope && e.TenantId == (tenantId ?? Guid.Empty))
                     .OrderByDescending(e => e.Version)
                     .FirstOrDefaultAsync();
 
@@ -262,12 +345,17 @@ namespace Converge.Configuration.Application.Services
                 var maxVersion = await _db.ConfigurationItems.Where(e => e.Key == key).MaxAsync(e => (int?)e.Version) ?? 0;
                 var newVersion = maxVersion + 1;
 
+                var rollbackCompanyId = (target.Scope == PersistenceScope.Company)
+                    ? (Guid?)(target.CompanyId ?? Guid.NewGuid())
+                    : null;
+
                 var newItem = new ConfigurationItem
                 {
                     Key = key,
                     Value = target.Value,
                     Scope = target.Scope,
                     TenantId = target.TenantId,
+                    CompanyId = rollbackCompanyId,
                     Version = newVersion,
                     Status = "ACTIVE",
                     CreatedAt = DateTime.UtcNow
@@ -275,17 +363,41 @@ namespace Converge.Configuration.Application.Services
 
                 _db.ConfigurationItems.Add(newItem);
 
-                // Auditing removed - do not write AuditEntry
+                var rollbackScope = FromPersistenceScope(newItem.Scope);
 
-                _db.OutboxEvents.Add(new OutboxEvent
+                if (rollbackScope == DtoScope.Company)
                 {
-                    EventType = "ConfigRolledBack",
-                    Payload = System.Text.Json.JsonSerializer.Serialize(newItem),
-                    CorrelationId = correlationId,
-                    OccurredAt = DateTime.UtcNow,
-                    Dispatched = false,
-                    Attempts = 0
-                });
+                    _db.CompanyConfigEvents.Add(new CompanyConfigEvent
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = newItem.CompanyId!.Value,
+                        Key = newItem.Key,
+                        Value = newItem.Value,
+                        EventType = "ConfigRolledBack",
+                        CorrelationId = correlationId,
+                        OccurredAt = DateTime.UtcNow,
+                        Dispatched = false,
+                        Attempts = 0
+                    });
+                }
+                else
+                {
+                    _db.OutboxEvents.Add(new OutboxEvent
+                    {
+                        Id = Guid.NewGuid(),
+                        Key = newItem.Key,
+                        Value = newItem.Value,
+                        Scope = (int)newItem.Scope,
+                        TenantId = newItem.TenantId,
+                        CompanyId = newItem.CompanyId,
+                        Version = newItem.Version ?? 0,
+                        EventType = "ConfigRolledBack",
+                        CorrelationId = correlationId,
+                        OccurredAt = DateTime.UtcNow,
+                        Dispatched = false,
+                        Attempts = 0
+                    });
+                }
 
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
@@ -294,16 +406,19 @@ namespace Converge.Configuration.Application.Services
                 {
                     Key = newItem.Key,
                     Value = newItem.Value,
-                    Scope = FromPersistenceScope(newItem.Scope),
+                    Scope = rollbackScope,
                     TenantId = newItem.TenantId,
-                    Version = newItem.Version
+                    CompanyId = rollbackScope == DtoScope.Company ? newItem.CompanyId : null,
+                    Version = newItem.Version ?? 0,
+                    Domain = rollbackScope == DtoScope.Global ? "Global" : null
                 };
             }
-            catch
+            catch (Exception)
             {
                 await tx.RollbackAsync();
                 throw;
             }
         }
+
     }
 }
