@@ -25,8 +25,7 @@ namespace Converge.Configuration.Application.Events
                 EventType = eventName,
                 CorrelationId = correlationId,
                 OccurredAt = DateTime.UtcNow,
-                Dispatched = false,
-                Attempts = 0
+                Dispatched = false
             };
 
             // Try to extract Key and Value from payload
@@ -35,8 +34,8 @@ namespace Converge.Configuration.Application.Events
                 entry.Key = config.Key;
                 entry.Value = config.Value;
                 entry.Scope = (int)config.Scope;
-                entry.TenantId = config.TenantId;
-                entry.CompanyId = config.CompanyId;
+                entry.TenantId = config.TenantId ?? Guid.Empty;
+                entry.CompanyId = config.CompanyId ?? Guid.Empty;
                 entry.Version = config.Version;
             }
 

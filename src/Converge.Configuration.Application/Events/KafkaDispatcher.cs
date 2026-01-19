@@ -38,10 +38,11 @@ namespace Converge.Configuration.Application.Events
                     var db = scope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
 
                     var pending = await db.OutboxEvents
-                        .Where(e => !e.Dispatched && e.Attempts < 5)
+                        .Where(e => !e.Dispatched)
                         .OrderBy(e => e.OccurredAt)
                         .Take(50)
                         .ToListAsync(stoppingToken);
+
 
                     foreach (var ev in pending)
                     {
@@ -56,6 +57,7 @@ namespace Converge.Configuration.Application.Events
                                 ev.Scope,
                                 ev.TenantId,
                                 ev.CompanyId,
+                                ev.DomainId,
                                 ev.Version,
                                 ev.EventType,
                                 ev.CorrelationId,
@@ -65,8 +67,6 @@ namespace Converge.Configuration.Application.Events
                             var res = await producer.ProduceAsync(_topic, msg, stoppingToken);
 
                             ev.Dispatched = true;
-                            ev.DispatchedAt = DateTime.UtcNow;
-                            ev.Attempts += 1;
 
                             db.OutboxEvents.Update(ev);
                             await db.SaveChangesAsync(stoppingToken);
@@ -75,9 +75,6 @@ namespace Converge.Configuration.Application.Events
                         }
                         catch (ProduceException<string, string> pex)
                         {
-                            ev.Attempts += 1;
-                            db.OutboxEvents.Update(ev);
-                            await db.SaveChangesAsync(stoppingToken);
                             _logger.LogError(pex, "Kafka produce failed for outbox event {EventId}", ev.Id);
                         }
                     }

@@ -17,6 +17,7 @@ namespace Converge.Configuration.Persistence.Entities
         public Guid? TenantId { get; set; }
         public Guid? CompanyId { get; set; }
         public int? Version { get; set; }
+        public Guid? DomainId { get; set; }  // Foreign key to Domain table
         
         // Event metadata
         public string EventType { get; set; } = string.Empty;  // ConfigCreated, ConfigUpdated, ConfigRolledBack

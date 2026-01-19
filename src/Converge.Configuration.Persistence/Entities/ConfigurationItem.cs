@@ -35,18 +35,8 @@ namespace Converge.Configuration.Persistence.Entities
         public Guid? CreatedBy { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         
-        // Domain/Module namespacing
+        // Domain/Module namespacing - uses DomainEntity
         public Guid? DomainId { get; set; }
-        public Domain? Domain { get; set; }  // Navigation property
-    }
-
-    /// <summary>
-    /// Domain entity for namespacing configuration keys by domain/module
-    /// </summary>
-    public class Domain
-    {
-        [Key]
-        public Guid Id { get; set; }
-        public string Name { get; set; } = string.Empty;
+        public DomainEntity? Domain { get; set; }  // Navigation property to DomainEntity
     }
 }

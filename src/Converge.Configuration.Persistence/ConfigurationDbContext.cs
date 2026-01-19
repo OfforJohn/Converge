@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Converge.Configuration.Persistence.Entities;
-using DomainEntity = Converge.Configuration.Persistence.Entities.Domain;
 
 namespace Converge.Configuration.Persistence
 {
@@ -23,24 +22,41 @@ namespace Converge.Configuration.Persistence
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // OutboxEvent - for reliable event publishing (outbox pattern)
+            // Inherits from BaseEntity: Id, TenantId, CompanyId, Version
             modelBuilder.Entity<OutboxEvent>(entity =>
             {
                 entity.ToTable("outboxevents", "public");
                 entity.HasKey(e => e.Id);
                 
+                // Inherited from BaseEntity - only map what exists in DB
                 entity.Property(e => e.Id).HasColumnName("id");
-                entity.Property(e => e.Key).HasColumnName("key").IsRequired();
-                entity.Property(e => e.Value).HasColumnName("value").IsRequired();
-                entity.Property(e => e.Scope).HasColumnName("scope");
                 entity.Property(e => e.TenantId).HasColumnName("tenantid");
                 entity.Property(e => e.CompanyId).HasColumnName("companyid");
                 entity.Property(e => e.Version).HasColumnName("version");
+                
+                // Ignore BaseEntity properties that don't exist in DB
+                entity.Ignore(e => e.CreatorId);
+                entity.Ignore(e => e.CreatedAt);
+                entity.Ignore(e => e.UpdaterId);
+                entity.Ignore(e => e.UpdatedAt);
+                entity.Ignore(e => e.DeleterId);
+                entity.Ignore(e => e.DeletedAt);
+                entity.Ignore(e => e.ExternalRef);
+                entity.Ignore(e => e.ImportBatchId);
+                entity.Ignore(e => e.SourceSystem);
+                entity.Ignore(e => e.Status);
+                entity.Ignore(e => e.EffectiveDate);
+                entity.Ignore(e => e.Notes);
+                
+                // OutboxEvent-specific properties
+                entity.Property(e => e.Key).HasColumnName("key").IsRequired();
+                entity.Property(e => e.Value).HasColumnName("value").IsRequired();
+                entity.Property(e => e.Scope).HasColumnName("scope");
+                entity.Property(e => e.DomainId).HasColumnName("domainid");
                 entity.Property(e => e.EventType).HasColumnName("eventtype").IsRequired();
                 entity.Property(e => e.CorrelationId).HasColumnName("correlationid").IsRequired();
                 entity.Property(e => e.OccurredAt).HasColumnName("occurredat");
                 entity.Property(e => e.Dispatched).HasColumnName("dispatched");
-                entity.Property(e => e.DispatchedAt).HasColumnName("dispatchedat");
-                entity.Property(e => e.Attempts).HasColumnName("attempts");
 
                 entity.HasIndex(e => e.Dispatched);
                 entity.HasIndex(e => e.OccurredAt);
@@ -86,6 +102,7 @@ namespace Converge.Configuration.Persistence
                 entity.Property(e => e.TenantId).HasColumnName("tenantid");
                 entity.Property(e => e.CompanyId).HasColumnName("companyid");
                 entity.Property(e => e.Version).HasColumnName("version");
+                entity.Property(e => e.DomainId).HasColumnName("domainid");
                 entity.Property(e => e.EventType).HasColumnName("eventtype").IsRequired();
                 entity.Property(e => e.CorrelationId).HasColumnName("correlationid").IsRequired();
                 entity.Property(e => e.OccurredAt).HasColumnName("occurredat");

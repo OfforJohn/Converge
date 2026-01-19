@@ -33,19 +33,22 @@ namespace Converge.Configuration.Application.Handlers.Implementations
             // Validate the request
             request.Request.Validate();
 
-            // Ensure TenantId is generated for Tenant and Company scopes
-            if ((request.Request.Scope == ConfigurationScope.Tenant || request.Request.Scope == ConfigurationScope.Company) && request.Request.TenantId == null)
-            {
-                request.Request.TenantId = Guid.NewGuid();
-            }
+            // For updates, TenantId should be provided to identify the existing config
+            // Don't auto-generate - that would create a mismatch with existing records
 
-            // Read current config for audit
+            // Read current config for audit (use the provided tenantId to find existing)
             var before = await _service.GetEffectiveAsync(
                 request.Key,
                 request.Request.TenantId,
                 null,
                 request.CorrelationId
             );
+
+            // If config doesn't exist, return null (not found)
+            if (before == null)
+            {
+                return null;
+            }
 
             // Update config
             var updated = await _service.UpdateAsync(
@@ -54,7 +57,7 @@ namespace Converge.Configuration.Application.Handlers.Implementations
                 request.CorrelationId
             );
 
-            // Audit and publish event
+            // Audit (event is already created in DbConfigService)
             if (updated != null)
             {
                 await _audit.AuditAsync(
@@ -66,8 +69,7 @@ namespace Converge.Configuration.Application.Handlers.Implementations
                     updated.TenantId,
                     request.CorrelationId
                 );
-
-                await _publisher.PublishAsync("ConfigUpdated", updated, request.CorrelationId);
+                // Note: OutboxEvent is already created in DbConfigService.UpdateAsync()
             }
 
             return updated;

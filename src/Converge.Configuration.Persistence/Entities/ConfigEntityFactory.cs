@@ -47,6 +47,7 @@ namespace Converge.Configuration.Persistence.Entities
                 TenantId = tenantId,
                 CompanyId = companyId,
                 Version = version,
+                DomainId = domainId,
                 EventType = eventType,
                 CorrelationId = correlationId,
                 OccurredAt = now,
@@ -55,20 +56,21 @@ namespace Converge.Configuration.Persistence.Entities
             };
 
             // 3️⃣ OutboxEvent - for reliable event publishing (outbox pattern)
+            // Inherits from BaseEntity which has non-nullable TenantId, CompanyId
             var outboxEvent = new OutboxEvent
             {
                 Id = Guid.NewGuid(),
                 Key = key,
                 Value = value,
                 Scope = (int)scope,
-                TenantId = tenantId,
-                CompanyId = companyId,
+                TenantId = tenantId ?? Guid.Empty,
+                CompanyId = companyId ?? Guid.Empty,
                 Version = version,
+                DomainId = domainId,
                 EventType = eventType,
                 CorrelationId = correlationId,
                 OccurredAt = now,
-                Dispatched = false,
-                Attempts = 0
+                Dispatched = false
             };
 
             return (configItem, companyEvent, outboxEvent);

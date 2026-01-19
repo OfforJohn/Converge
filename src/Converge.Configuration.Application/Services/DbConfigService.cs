@@ -10,8 +10,6 @@ using Converge.Configuration.Services;
 // Alias ambiguous enums
 using PersistenceScope = Converge.Configuration.Persistence.Entities.ConfigurationScope;
 using DtoScope = Converge.Configuration.DTOs.ConfigurationScope;
-// Add using for Domain entity
-using DomainEntity = Converge.Configuration.Persistence.Entities.Domain;
 
 namespace Converge.Configuration.Application.Services
 {
@@ -132,16 +130,17 @@ namespace Converge.Configuration.Application.Services
             if (string.IsNullOrWhiteSpace(request.Value))
                 throw new ArgumentException("Value is required", nameof(request.Value));
 
-            // Remove TenantId requirement for Company scope
+            // Validation based on scope:
+            // - Global: TenantId must be null, no IDs returned
+            // - Tenant: TenantId required
+            // - Company: TenantId optional (auto-generated if not provided), CompanyId auto-generated
+            if (request.Scope == DtoScope.Global && request.TenantId != null)
+                throw new InvalidOperationException("TenantId must be null for GLOBAL scoped config");
+
             if (request.Scope == DtoScope.Tenant && request.TenantId == null)
                 throw new InvalidOperationException("TenantId is required for TENANT scoped config");
 
-            // Remove this check:
-            // if (request.Scope == DtoScope.Company && request.TenantId == null)
-            //     throw new InvalidOperationException("TenantId is required for COMPANY scoped config");
-
-            if (request.Scope == DtoScope.Global && request.TenantId != null)
-                throw new InvalidOperationException("TenantId must be null for GLOBAL scoped config");
+            // Company scope: TenantId is optional - will be auto-generated if not provided
 
             using var tx = await _db.Database.BeginTransactionAsync();
 
@@ -151,11 +150,11 @@ namespace Converge.Configuration.Application.Services
                 Guid? domainId = null;
                 if (!string.IsNullOrWhiteSpace(request.Domain))
                 {
-                    var existingDomain = await _db.Set<DomainEntity>().FirstOrDefaultAsync(d => d.Name == request.Domain);
+                    var existingDomain = await _db.Domains.FirstOrDefaultAsync(d => d.Name == request.Domain);
                     if (existingDomain == null)
                     {
                         var newDomain = new DomainEntity { Id = Guid.NewGuid(), Name = request.Domain };
-                        _db.Set<DomainEntity>().Add(newDomain);
+                        _db.Domains.Add(newDomain);
                         await _db.SaveChangesAsync();
                         domainId = newDomain.Id;
                     }
@@ -172,18 +171,40 @@ namespace Converge.Configuration.Application.Services
                 if (existingActive != null)
                     throw new Converge.Configuration.Application.Exceptions.ConfigurationAlreadyExistsException(request.Key);
 
+
                 var maxVersion = await _db.ConfigurationItems.Where(e => e.Key == request.Key).MaxAsync(e => (int?)e.Version) ?? 0;
                 var newVersion = maxVersion + 1;
 
-                var generatedCompanyId = (request.Scope == DtoScope.Company) ? Guid.NewGuid() : (Guid?)null;
+                // Set IDs based on scope:
+                // - Global: null, null
+                // - Tenant: tenantId (from request), null
+                // - Company: tenantId (from request or auto-generated), companyId (auto-generated)
+                Guid? effectiveTenantId;
+                Guid? effectiveCompanyId;
+
+                if (request.Scope == DtoScope.Global)
+                {
+                    effectiveTenantId = null;
+                    effectiveCompanyId = null;
+                }
+                else if (request.Scope == DtoScope.Tenant)
+                {
+                    effectiveTenantId = request.TenantId;
+                    effectiveCompanyId = null;
+                }
+                else // Company scope
+                {
+                    effectiveTenantId = request.TenantId ?? Guid.NewGuid();  // Auto-generate if not provided
+                    effectiveCompanyId = Guid.NewGuid();  // Always auto-generate
+                }
 
                 // Use ConfigEntityFactory to create all entities with shared properties
                 var (item, companyEvent, outboxEvent) = ConfigEntityFactory.CreateAllEntities(
                     key: request.Key,
                     value: request.Value,
                     scope: persistenceScope,
-                    tenantId: request.TenantId,
-                    companyId: generatedCompanyId,
+                    tenantId: effectiveTenantId,
+                    companyId: effectiveCompanyId,
                     version: newVersion,
                     eventType: "ConfigCreated",
                     correlationId: correlationId,
@@ -197,18 +218,36 @@ namespace Converge.Configuration.Application.Services
                 _db.CompanyConfigEvents.Add(companyEvent);
                 _db.OutboxEvents.Add(outboxEvent);
 
+
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
 
+                // Get domain name for response
+                string? domainName = null;
+                if (domainId.HasValue)
+                {
+                    var domain = await _db.Domains.FindAsync(domainId.Value);
+                    domainName = domain?.Name;
+                }
+                // For Global scope, set domain name to "Global"
+                if (request.Scope == DtoScope.Global)
+                {
+                    domainName = "Global";
+                }
+
+                // Return response based on scope:
+                // - Global: no tenantId, no companyId
+                // - Tenant: tenantId only
+                // - Company: both tenantId and companyId
                 return new ConfigResponse
                 {
                     Key = item.Key,
                     Value = item.Value,
                     Scope = request.Scope,
-                    TenantId = item.TenantId,
+                    TenantId = request.Scope == DtoScope.Global ? null : item.TenantId,
                     CompanyId = request.Scope == DtoScope.Company ? item.CompanyId : null,
                     Version = item.Version ?? 0,
-                    Domain = request.Scope == DtoScope.Global ? "Global" : null
+                    Domain = domainName
                 };
             }
             catch (Exception)
@@ -228,71 +267,90 @@ namespace Converge.Configuration.Application.Services
             {
                 var persistenceScope = ToPersistenceScope(request.Scope);
 
-                var active = await _db.ConfigurationItems
-                    .Where(e => e.Status == "ACTIVE" && e.Scope == persistenceScope && e.TenantId == request.TenantId)
-                    .OrderByDescending(e => e.Version)
+                // Find the existing active configuration
+                var existingConfig = await _db.ConfigurationItems
+                    .Where(e => e.Key == key && e.Status == "ACTIVE" && e.Scope == persistenceScope && e.TenantId == request.TenantId)
                     .FirstOrDefaultAsync();
 
-                if (active == null) return null;
+                if (existingConfig == null) return null;
 
-                if (request.ExpectedVersion.HasValue && request.ExpectedVersion.Value != (active.Version ?? 0))
+                // Check version for optimistic concurrency
+                if (request.ExpectedVersion.HasValue && request.ExpectedVersion.Value != (existingConfig.Version ?? 0))
                 {
-                    throw new Converge.Configuration.Application.Exceptions.VersionConflictException(key, request.ExpectedVersion.Value, active.Version ?? 0);
+                    throw new Converge.Configuration.Application.Exceptions.VersionConflictException(key, request.ExpectedVersion.Value, existingConfig.Version ?? 0);
                 }
 
-                // Deprecate active
-                active.Status = "DEPRECATED";
+                // Find existing OutboxEvent for this config (to update in place)
+                var existingOutbox = await _db.OutboxEvents
+                    .Where(e => e.Key == key && e.TenantId == (existingConfig.TenantId ?? Guid.Empty))
+                    .FirstOrDefaultAsync();
 
-                var maxVersion = await _db.ConfigurationItems.Where(e => e.Key == key).MaxAsync(e => (int?)e.Version) ?? 0;
-                var newVersion = maxVersion + 1;
+                // Find existing CompanyConfigEvent for this config (to update in place)
+                var existingCompanyEvent = await _db.CompanyConfigEvents
+                    .Where(e => e.Key == key && e.TenantId == existingConfig.TenantId)
+                    .FirstOrDefaultAsync();
 
-                var newCompanyId = (active.Scope == PersistenceScope.Company)
-                    ? (Guid?)(active.CompanyId ?? Guid.NewGuid())
-                    : null;
+                // Increment version
+                var newVersion = (existingConfig.Version ?? 0) + 1;
 
-                var newItem = new ConfigurationItem
+                // Update ConfigurationItem in place
+                existingConfig.Value = request.Value;
+                existingConfig.Version = newVersion;
+                _db.ConfigurationItems.Update(existingConfig);
+
+                // Update OutboxEvent in place (or create if doesn't exist)
+                if (existingOutbox != null)
                 {
-                    Key = key,
-                    Value = request.Value,
-                    Scope = active.Scope,
-                    TenantId = active.TenantId,
-                    CompanyId = newCompanyId,
-                    Version = newVersion,
-                    Status = "ACTIVE",
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                _db.ConfigurationItems.Update(active);
-                _db.ConfigurationItems.Add(newItem);
-
-                var updatedScope = FromPersistenceScope(newItem.Scope);
-
-                if (updatedScope == DtoScope.Company)
-                {
-                    _db.CompanyConfigEvents.Add(new CompanyConfigEvent
-                    {
-                        Id = Guid.NewGuid(),
-                        CompanyId = newItem.CompanyId!.Value,
-                        Key = newItem.Key,
-                        Value = newItem.Value,
-                        EventType = "ConfigUpdated",
-                        CorrelationId = correlationId,
-                        OccurredAt = DateTime.UtcNow,
-                        Dispatched = false,
-                        Attempts = 0
-                    });
+                    existingOutbox.Value = request.Value;
+                    existingOutbox.Version = newVersion;
+                    existingOutbox.EventType = "ConfigUpdated";
+                    existingOutbox.CorrelationId = correlationId;
+                    existingOutbox.OccurredAt = DateTime.UtcNow;
+                    existingOutbox.Dispatched = false;
+                    _db.OutboxEvents.Update(existingOutbox);
                 }
                 else
                 {
                     _db.OutboxEvents.Add(new OutboxEvent
                     {
                         Id = Guid.NewGuid(),
-                        Key = newItem.Key,
-                        Value = newItem.Value,
-                        Scope = (int)newItem.Scope,
-                        TenantId = newItem.TenantId,
-                        CompanyId = newItem.CompanyId,
-                        Version = newItem.Version ?? 0,
+                        Key = existingConfig.Key,
+                        Value = existingConfig.Value,
+                        Scope = (int)existingConfig.Scope,
+                        TenantId = existingConfig.TenantId ?? Guid.Empty,
+                        CompanyId = existingConfig.CompanyId ?? Guid.Empty,
+                        DomainId = existingConfig.DomainId,
+                        Version = newVersion,
+                        EventType = "ConfigUpdated",
+                        CorrelationId = correlationId,
+                        OccurredAt = DateTime.UtcNow,
+                        Dispatched = false
+                    });
+                }
+
+                // Update CompanyConfigEvent in place (or create if doesn't exist)
+                if (existingCompanyEvent != null)
+                {
+                    existingCompanyEvent.Value = request.Value;
+                    existingCompanyEvent.Version = newVersion;
+                    existingCompanyEvent.EventType = "ConfigUpdated";
+                    existingCompanyEvent.CorrelationId = correlationId;
+                    existingCompanyEvent.OccurredAt = DateTime.UtcNow;
+                    existingCompanyEvent.Dispatched = false;
+                    _db.CompanyConfigEvents.Update(existingCompanyEvent);
+                }
+                else
+                {
+                    _db.CompanyConfigEvents.Add(new CompanyConfigEvent
+                    {
+                        Id = Guid.NewGuid(),
+                        Key = existingConfig.Key,
+                        Value = existingConfig.Value,
+                        Scope = (int)existingConfig.Scope,
+                        TenantId = existingConfig.TenantId,
+                        CompanyId = existingConfig.CompanyId,
+                        DomainId = existingConfig.DomainId,
+                        Version = newVersion,
                         EventType = "ConfigUpdated",
                         CorrelationId = correlationId,
                         OccurredAt = DateTime.UtcNow,
@@ -304,15 +362,28 @@ namespace Converge.Configuration.Application.Services
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
 
+                // Get domain name for response
+                var updatedScope = FromPersistenceScope(existingConfig.Scope);
+                string? domainName = null;
+                if (existingConfig.DomainId.HasValue)
+                {
+                    var domain = await _db.Domains.FindAsync(existingConfig.DomainId.Value);
+                    domainName = domain?.Name;
+                }
+                if (updatedScope == DtoScope.Global)
+                {
+                    domainName = "Global";
+                }
+
                 return new ConfigResponse
                 {
-                    Key = newItem.Key,
-                    Value = newItem.Value,
+                    Key = existingConfig.Key,
+                    Value = existingConfig.Value,
                     Scope = updatedScope,
-                    TenantId = newItem.TenantId,
-                    CompanyId = updatedScope == DtoScope.Company ? newItem.CompanyId : null,
-                    Version = newItem.Version ?? 0,
-                    Domain = updatedScope == DtoScope.Global ? "Global" : null
+                    TenantId = updatedScope == DtoScope.Global ? null : existingConfig.TenantId,
+                    CompanyId = updatedScope == DtoScope.Company ? existingConfig.CompanyId : null,
+                    Version = existingConfig.Version ?? 0,
+                    Domain = domainName
                 };
             }
             catch (Exception)
@@ -388,14 +459,13 @@ namespace Converge.Configuration.Application.Services
                         Key = newItem.Key,
                         Value = newItem.Value,
                         Scope = (int)newItem.Scope,
-                        TenantId = newItem.TenantId,
-                        CompanyId = newItem.CompanyId,
+                        TenantId = newItem.TenantId ?? Guid.Empty,
+                        CompanyId = newItem.CompanyId ?? Guid.Empty,
                         Version = newItem.Version ?? 0,
                         EventType = "ConfigRolledBack",
                         CorrelationId = correlationId,
                         OccurredAt = DateTime.UtcNow,
-                        Dispatched = false,
-                        Attempts = 0
+                        Dispatched = false
                     });
                 }
 
