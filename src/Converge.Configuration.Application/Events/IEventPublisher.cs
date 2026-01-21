@@ -4,6 +4,6 @@ namespace Converge.Configuration.Application.Events
 {
     public interface IEventPublisher
     {
-        Task PublishAsync(string eventName, object payload, string correlationId);
+        Task PublishAsync(string eventName, object payload, Guid correlationId);
     }
 }

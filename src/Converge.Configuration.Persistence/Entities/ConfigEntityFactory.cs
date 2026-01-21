@@ -15,7 +15,7 @@ namespace Converge.Configuration.Persistence.Entities
             Guid? companyId,
             int version,
             string eventType,
-            string correlationId,
+            Guid correlationId,
             Guid? createdBy = null,
             Guid? domainId = null)
         {

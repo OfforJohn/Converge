@@ -4,12 +4,16 @@ using ConvergeERP.Shared.Domain;
 namespace Converge.Configuration.Persistence.Entities
 {
     /// <summary>
-    /// Outbox event for reliable event publishing (Outbox Pattern)
+    /// OutboxEvent is the single source of truth for all configurations.
+    /// Supports multiple configs with same key but different tenant/company/domain IDs.
     /// Events: ConfigCreated, ConfigUpdated, ConfigRolledBack
-    /// Inherits from BaseEntity: Id, TenantId, CompanyId, Version
     /// </summary>
     public class OutboxEvent : BaseEntity
     {
+        // Override TenantId and CompanyId to make them nullable
+        public new Guid? TenantId { get; set; }
+        public new Guid? CompanyId { get; set; }
+        
         // Configuration data
         public string Key { get; set; } = string.Empty;
         public string Value { get; set; } = string.Empty;
@@ -18,7 +22,7 @@ namespace Converge.Configuration.Persistence.Entities
         
         // Event metadata
         public string EventType { get; set; } = string.Empty;
-        public string CorrelationId { get; set; } = string.Empty;
+        public Guid CorrelationId { get; set; }
         public DateTime OccurredAt { get; set; } = DateTime.UtcNow;
         
         // Outbox pattern field

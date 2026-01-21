@@ -1,3 +1,4 @@
+using System;
 using Converge.Configuration.DTOs;
 
 namespace Converge.Configuration.Application.Handlers.Requests
@@ -8,9 +9,9 @@ namespace Converge.Configuration.Application.Handlers.Requests
     public class CreateConfigCommand
     {
         public CreateConfigRequest Request { get; }
-        public string CorrelationId { get; }
+        public Guid CorrelationId { get; }
 
-        public CreateConfigCommand(CreateConfigRequest request, string correlationId)
+        public CreateConfigCommand(CreateConfigRequest request, Guid correlationId)
         {
             Request = request;
             CorrelationId = correlationId;

@@ -8,6 +8,7 @@ using Converge.Configuration.Application.Handlers.Implementations;
 using Converge.Configuration.Services;
 using Converge.Configuration.API.Json;
 using Converge.Configuration.API.Middleware;
+using Converge.Configuration.API.Services;
 using Converge.Configuration.Application.Services;
 using Converge.Configuration.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,8 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+
+
 
 // Configure controllers and JSON options to allow enum values as strings
 builder.Services.AddControllers()
@@ -73,6 +76,15 @@ if (usePostgres)
     builder.Services.AddScoped<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddScoped<IEventPublisher, OutboxEventPublisher>();
     
+    // Register HttpContextAccessor for IScopeContext
+    builder.Services.AddHttpContextAccessor();
+    
+    // Register IScopeContext to get scope from JWT token claims
+    builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
+    
+    // Register TokenScopeService to extract scope/IDs from Bearer tokens
+    builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
+    
     // Register DbConfigService when using Postgres
     builder.Services.AddScoped<IConfigService, DbConfigService>();
 }
@@ -81,6 +93,15 @@ else
     // Fallback to console implementations for dev
     builder.Services.AddSingleton<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddSingleton<IEventPublisher, Converge.Configuration.Application.Events.OutboxEventPublisher>();
+    
+    // Register HttpContextAccessor for IScopeContext
+    builder.Services.AddHttpContextAccessor();
+    
+    // Register IScopeContext to get scope from JWT token claims
+    builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
+    
+    // Register TokenScopeService to extract scope/IDs from Bearer tokens
+    builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
     
     // Register in-memory config service when NOT using Postgres
     builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();

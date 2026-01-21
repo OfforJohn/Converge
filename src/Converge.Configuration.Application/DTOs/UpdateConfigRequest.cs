@@ -17,17 +17,17 @@ namespace Converge.Configuration.DTOs
         public int? ExpectedVersion { get; set; }
         
         /// <summary>
-        /// The scope of the configuration to update
+        /// The scope of the configuration to update (extracted from Bearer token)
         /// </summary>
-        public ConfigurationScope Scope { get; set; }
+        public ConfigurationScope? Scope { get; set; }
         
         /// <summary>
-        /// Required for Tenant and Company scopes to identify the config
+        /// Tenant ID (extracted from Bearer token)
         /// </summary>
         public Guid? TenantId { get; set; }
         
         /// <summary>
-        /// Optional: CompanyId for Company scoped configs
+        /// Company ID (extracted from Bearer token)
         /// </summary>
         public Guid? CompanyId { get; set; }
 
@@ -39,16 +39,17 @@ namespace Converge.Configuration.DTOs
             if (ExpectedVersion.HasValue && ExpectedVersion < 0)
                 throw new ArgumentException("ExpectedVersion cannot be negative.");
 
-            // Validate Scope
-            if (!Enum.IsDefined(typeof(ConfigurationScope), Scope))
+            // Validate Scope (if provided)
+            if (Scope.HasValue && !Enum.IsDefined(typeof(ConfigurationScope), Scope.Value))
                 throw new ArgumentException("Invalid configuration scope.");
 
-            // For Tenant/Company scope updates, TenantId is required to identify the config
+            // For Tenant scope, TenantId is required
             if (Scope == ConfigurationScope.Tenant && TenantId == null)
                 throw new ValidationException("TenantId is required to update Tenant scoped config.");
             
-            if (Scope == ConfigurationScope.Company && TenantId == null)
-                throw new ValidationException("TenantId is required to update Company scoped config.");
+            // For Company scope, CompanyId is required (not TenantId)
+            if (Scope == ConfigurationScope.Company && CompanyId == null)
+                throw new ValidationException("CompanyId is required to update Company scoped config.");
         }
     }
 }

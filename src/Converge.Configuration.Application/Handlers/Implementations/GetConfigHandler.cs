@@ -6,7 +6,7 @@ using Converge.Configuration.Services;
 namespace Converge.Configuration.Application.Handlers.Implementations
 {
     /// <summary>
-    /// Read handler for GetConfigQuery — delegates to existing IConfigService for now.
+    /// Read handler for GetConfigQuery - delegates to existing IConfigService.
     /// </summary>
     public class GetConfigHandler : IRequestHandler<GetConfigQuery, ConfigResponse?>
     {
@@ -19,7 +19,7 @@ namespace Converge.Configuration.Application.Handlers.Implementations
 
         public Task<ConfigResponse?> Handle(GetConfigQuery request)
         {
-            return _service.GetEffectiveAsync(request.Key, request.TenantId, request.Version, request.CorrelationId);
+            return _service.GetEffectiveAsync(request.Key, request.TenantId, request.CompanyId, request.Version, request.CorrelationId);
         }
     }
 }

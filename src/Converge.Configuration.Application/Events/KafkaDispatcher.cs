@@ -63,7 +63,7 @@ namespace Converge.Configuration.Application.Events
                                 ev.CorrelationId,
                                 ev.OccurredAt
                             });
-                            var msg = new Message<string, string> { Key = ev.CorrelationId, Value = payload };
+                            var msg = new Message<string, string> { Key = ev.CorrelationId.ToString(), Value = payload };
                             var res = await producer.ProduceAsync(_topic, msg, stoppingToken);
 
                             ev.Dispatched = true;

@@ -1,4 +1,5 @@
 ﻿using Converge.Configuration.Application.Exceptions;
+using Converge.Configuration.Application.Services;
 using Converge.Configuration.DTOs;
 using System;
 using System.Collections.Concurrent;
@@ -10,6 +11,8 @@ namespace Converge.Configuration.Services
 {
     public class InMemoryConfigService : IConfigService
     {
+        private readonly IScopeContext _scopeContext;
+
         // Immutable internal storage model
         private record Entry(
             string Key,
@@ -23,14 +26,20 @@ namespace Converge.Configuration.Services
         // Key = config key, Value = all versions of that key
         private readonly ConcurrentDictionary<string, List<Entry>> _store = new();
 
+        public InMemoryConfigService(IScopeContext scopeContext)
+        {
+            _scopeContext = scopeContext;
+        }
+
         // -------------------------------
         // READ (Query)
         // -------------------------------
         public Task<ConfigResponse?> GetEffectiveAsync(
             string key,
             Guid? tenantId,
+            Guid? companyId,
             int? version,
-            string correlationId)
+            Guid correlationId)
         {
             if (!_store.TryGetValue(key, out var versions) || versions.Count == 0)
                 return Task.FromResult<ConfigResponse?>(null);
@@ -84,7 +93,7 @@ namespace Converge.Configuration.Services
         // -------------------------------
         public Task<ConfigResponse> CreateAsync(
             CreateConfigRequest request,
-            string correlationId)
+            Guid correlationId)
         {
             // Domain validation
             if (string.IsNullOrWhiteSpace(request.Key))
@@ -105,10 +114,12 @@ namespace Converge.Configuration.Services
 
             lock (list)
             {
+                var scope = request.Scope ?? _scopeContext.CurrentScope;
+                
                 // Enforce single active config per scope+tenant
                 var existingActive = list.FirstOrDefault(e =>
                     e.Active &&
-                    e.Scope == request.Scope &&
+                    e.Scope == scope &&
                     e.TenantId == request.TenantId);
 
                 if (existingActive != null)
@@ -121,7 +132,7 @@ namespace Converge.Configuration.Services
                 var entry = new Entry(
                     request.Key,
                     request.Value,
-                    request.Scope,
+                    scope,
                     request.TenantId,
                     newVersion,
                     true);
@@ -145,7 +156,7 @@ namespace Converge.Configuration.Services
         public Task<ConfigResponse?> UpdateAsync(
             string key,
             UpdateConfigRequest request,
-            string correlationId)
+            Guid correlationId)
         {
             if (string.IsNullOrWhiteSpace(request.Value))
                 throw new ArgumentException("Value is required", nameof(request.Value));
@@ -215,7 +226,7 @@ namespace Converge.Configuration.Services
             string key,
             int version,
             Guid? tenantId,
-            string correlationId)
+            Guid correlationId)
         {
             if (!_store.TryGetValue(key, out var list) || list.Count == 0)
                 return Task.FromResult<ConfigResponse?>(null);

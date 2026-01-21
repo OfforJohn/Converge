@@ -1,4 +1,5 @@
 
+
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Converge.Configuration.DTOs;
@@ -20,23 +21,24 @@ namespace Converge.Configuration.Services
             _ttl = ttl ?? TimeSpan.FromMinutes(5);
         }
 
-        private string MakeCacheKey(string key, Guid? tenantId, int? version)
+        private string MakeCacheKey(string key, Guid? tenantId, Guid? companyId, int? version)
         {
             var tenantPart = tenantId?.ToString() ?? "global";
+            var companyPart = companyId?.ToString() ?? "none";
             var versionPart = version?.ToString() ?? "latest";
-            return $"config:{key}:{tenantPart}:{versionPart}";
+            return $"config:{key}:{tenantPart}:{companyPart}:{versionPart}";
         }
 
-        public async Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, int? version, string correlationId)
+        public async Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, Guid? companyId, int? version, Guid correlationId)
         {
-            var cacheKey = MakeCacheKey(key, tenantId, version);
+            var cacheKey = MakeCacheKey(key, tenantId, companyId, version);
             var cached = await _cache.GetStringAsync(cacheKey);
             if (!string.IsNullOrEmpty(cached))
             {
                 return JsonSerializer.Deserialize<ConfigResponse>(cached, _jsonOptions);
             }
 
-            var result = await _inner.GetEffectiveAsync(key, tenantId, version, correlationId);
+            var result = await _inner.GetEffectiveAsync(key, tenantId, companyId, version, correlationId);
             if (result != null)
             {
                 var json = JsonSerializer.Serialize(result, _jsonOptions);
@@ -47,29 +49,29 @@ namespace Converge.Configuration.Services
             return result;
         }
 
-        public Task<ConfigResponse> CreateAsync(CreateConfigRequest request, string correlationId)
+        public Task<ConfigResponse> CreateAsync(CreateConfigRequest request, Guid correlationId)
         {
             // on create, invalidate relevant cache keys for the key
             // simplest is to remove latest and tenant/global keys
-            return InvalidateAndCall(() => _inner.CreateAsync(request, correlationId), request.Key, request.TenantId);
+            return InvalidateAndCall(() => _inner.CreateAsync(request, correlationId), request.Key, request.TenantId, null);
         }
 
-        public Task<ConfigResponse?> UpdateAsync(string key, UpdateConfigRequest request, string correlationId)
+        public Task<ConfigResponse?> UpdateAsync(string key, UpdateConfigRequest request, Guid correlationId)
         {
-            return InvalidateAndCall(() => _inner.UpdateAsync(key, request, correlationId), key, null);
+            return InvalidateAndCall(() => _inner.UpdateAsync(key, request, correlationId), key, request.TenantId, request.CompanyId);
         }
 
-        public Task<ConfigResponse?> RollbackAsync(string key, int version, Guid? tenantId, string correlationId)
+        public Task<ConfigResponse?> RollbackAsync(string key, int version, Guid? tenantId, Guid correlationId)
         {
-            return InvalidateAndCall(() => _inner.RollbackAsync(key, version, tenantId, correlationId), key, tenantId);
+            return InvalidateAndCall(() => _inner.RollbackAsync(key, version, tenantId, correlationId), key, tenantId, null);
         }
 
-        private async Task<T> InvalidateAndCall<T>(Func<Task<T>> op, string key, Guid? tenantId)
+        private async Task<T> InvalidateAndCall<T>(Func<Task<T>> op, string key, Guid? tenantId, Guid? companyId)
         {
             // remove cached variants for latest and tenant/global
             var keys = new[] {
-                MakeCacheKey(key, tenantId, null),
-                MakeCacheKey(key, null, null),
+                MakeCacheKey(key, tenantId, companyId, null),
+                MakeCacheKey(key, null, null, null),
             };
 
             foreach (var k in keys)

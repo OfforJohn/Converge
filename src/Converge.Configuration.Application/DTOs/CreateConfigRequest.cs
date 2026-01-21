@@ -18,16 +18,18 @@ namespace Converge.Configuration.DTOs
         [Required]
         public string Value { get; set; } = null!;
 
-        [Required]
-        public ConfigurationScope Scope { get; set; }
+        /// <summary>
+        /// Scope is extracted from Bearer token, not required in request body
+        /// </summary>
+        public ConfigurationScope? Scope { get; set; }
 
         /// <summary>
-        /// Required for Tenant and Company scopes
+        /// Domain is optional and extracted from Bearer token if needed
         /// </summary>
         public string? Domain { get; set; }
 
         /// <summary>
-        /// TenantId is server-generated for Tenant and Company scopes
+        /// TenantId is extracted from Bearer token, not settable by client
         /// </summary>
         public Guid? TenantId { get; set; }
 
@@ -38,7 +40,11 @@ namespace Converge.Configuration.DTOs
         /// </summary>
         public void Validate()
         {
-            switch (Scope)
+            // If Scope is not provided, skip validation (will be set from token)
+            if (!Scope.HasValue)
+                return;
+
+            switch (Scope.Value)
             {
                 case ConfigurationScope.Company:
                 case ConfigurationScope.Tenant:

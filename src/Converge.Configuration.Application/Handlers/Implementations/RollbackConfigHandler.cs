@@ -28,17 +28,38 @@ namespace Converge.Configuration.Application.Handlers.Implementations
 
         public async Task<ConfigResponse?> Handle(RollbackConfigCommand request)
         {
-            var before = await _service.GetEffectiveAsync(request.Key, request.TenantId, null, request.CorrelationId);
+            // Get current config for audit
+            var before = await _service.GetEffectiveAsync(
+                request.Key,
+                request.TenantId,
+                null,
+                null,
+                request.CorrelationId
+            );
 
-            var rolled = await _service.RollbackAsync(request.Key, request.Version, request.TenantId, request.CorrelationId);
+            // Perform rollback
+            var result = await _service.RollbackAsync(
+                request.Key,
+                request.Version,
+                request.TenantId,
+                request.CorrelationId
+            );
 
-            if (rolled != null)
+            // Audit (event is already created in DbConfigService)
+            if (result != null)
             {
-                await _audit.AuditAsync("Rollback", request.Key, before, rolled, null, rolled.TenantId, request.CorrelationId);
-                await _publisher.PublishAsync("ConfigRolledBack", rolled, request.CorrelationId);
+                await _audit.AuditAsync(
+                    "Rollback",
+                    request.Key,
+                    before,
+                    result,
+                    null,
+                    result.TenantId ?? result.CompanyId,
+                    request.CorrelationId
+                );
             }
 
-            return rolled;
+            return result;
         }
     }
 }

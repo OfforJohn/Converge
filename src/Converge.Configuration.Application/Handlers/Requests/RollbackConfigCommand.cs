@@ -7,9 +7,9 @@ namespace Converge.Configuration.Application.Handlers.Requests
         public string Key { get; }
         public int Version { get; }
         public Guid? TenantId { get; }
-        public string CorrelationId { get; }
+        public Guid CorrelationId { get; }
 
-        public RollbackConfigCommand(string key, int version, Guid? tenantId, string correlationId)
+        public RollbackConfigCommand(string key, int version, Guid? tenantId, Guid correlationId)
         {
             Key = key;
             Version = version;

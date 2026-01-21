@@ -9,7 +9,7 @@ namespace Converge.Configuration.Application.Events
         {
         }
 
-        public Task PublishAsync(string eventName, object payload, string correlationId)
+        public Task PublishAsync(string eventName, object payload, Guid correlationId)
         {
             Console.WriteLine($"EVENT {eventName} correlation={correlationId} payload={payload}");
             return Task.CompletedTask;

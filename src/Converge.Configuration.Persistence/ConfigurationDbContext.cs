@@ -21,8 +21,8 @@ namespace Converge.Configuration.Persistence
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // OutboxEvent - for reliable event publishing (outbox pattern)
-            // Inherits from BaseEntity: Id, TenantId, CompanyId, Version
+            // OutboxEvent - single source of truth for all configurations
+            // Supports multiple configs with same key but different tenant/company/domain IDs
             modelBuilder.Entity<OutboxEvent>(entity =>
             {
                 entity.ToTable("outboxevents", "public");
@@ -44,9 +44,9 @@ namespace Converge.Configuration.Persistence
                 entity.Ignore(e => e.ExternalRef);
                 entity.Ignore(e => e.ImportBatchId);
                 entity.Ignore(e => e.SourceSystem);
-                entity.Ignore(e => e.Status);
                 entity.Ignore(e => e.EffectiveDate);
                 entity.Ignore(e => e.Notes);
+                entity.Ignore(e => e.Status);
                 
                 // OutboxEvent-specific properties
                 entity.Property(e => e.Key).HasColumnName("key").IsRequired();
@@ -54,19 +54,26 @@ namespace Converge.Configuration.Persistence
                 entity.Property(e => e.Scope).HasColumnName("scope");
                 entity.Property(e => e.DomainId).HasColumnName("domainid");
                 entity.Property(e => e.EventType).HasColumnName("eventtype").IsRequired();
-                entity.Property(e => e.CorrelationId).HasColumnName("correlationid").IsRequired();
+                entity.Property(e => e.CorrelationId)
+                    .HasColumnName("correlationid")
+                    .HasConversion(
+                        v => v.ToString(),
+                        v => Guid.Parse(v));
                 entity.Property(e => e.OccurredAt).HasColumnName("occurredat");
                 entity.Property(e => e.Dispatched).HasColumnName("dispatched");
 
+                // Indexes for efficient querying
                 entity.HasIndex(e => e.Dispatched);
                 entity.HasIndex(e => e.OccurredAt);
+                entity.HasIndex(e => new { e.Key, e.Scope, e.TenantId, e.CompanyId });
             });
 
-            // ConfigurationItem - main config storage
+            // ConfigurationItem - kept for backward compatibility but not used
             modelBuilder.Entity<ConfigurationItem>(entity =>
             {
                 entity.ToTable("configurationitems", "public");
                 entity.HasKey(e => e.Id);
+
                 
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.Key).HasColumnName("key").IsRequired();

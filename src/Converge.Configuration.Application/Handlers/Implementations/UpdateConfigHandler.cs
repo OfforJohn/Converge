@@ -33,13 +33,14 @@ namespace Converge.Configuration.Application.Handlers.Implementations
             // Validate the request
             request.Request.Validate();
 
-            // For updates, TenantId should be provided to identify the existing config
-            // Don't auto-generate - that would create a mismatch with existing records
-
-            // Read current config for audit (use the provided tenantId to find existing)
+            // Read current config for audit based on scope:
+            // - Tenant scope: use tenantId
+            // - Company scope: use companyId
+            // - Global scope: no ID needed
             var before = await _service.GetEffectiveAsync(
                 request.Key,
                 request.Request.TenantId,
+                request.Request.CompanyId,
                 null,
                 request.CorrelationId
             );
@@ -66,10 +67,9 @@ namespace Converge.Configuration.Application.Handlers.Implementations
                     before,
                     updated,
                     null,
-                    updated.TenantId,
+                    updated.TenantId ?? updated.CompanyId,
                     request.CorrelationId
                 );
-                // Note: OutboxEvent is already created in DbConfigService.UpdateAsync()
             }
 
             return updated;

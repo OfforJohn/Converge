@@ -16,7 +16,7 @@ namespace Converge.Configuration.Application.Events
             _db = db;
         }
 
-        public async Task PublishAsync(string eventName, object payload, string correlationId)
+        public async Task PublishAsync(string eventName, object payload, Guid correlationId)
         {
             // Extract properties from payload if it's a known type
             var entry = new OutboxEvent

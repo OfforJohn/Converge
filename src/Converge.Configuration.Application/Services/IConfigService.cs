@@ -6,9 +6,9 @@ namespace Converge.Configuration.Services
 {
     public interface IConfigService
     {
-        Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, int? version, string correlationId);
-        Task<ConfigResponse> CreateAsync(CreateConfigRequest request, string correlationId);
-        Task<ConfigResponse?> UpdateAsync(string key, UpdateConfigRequest request, string correlationId);
-        Task<ConfigResponse?> RollbackAsync(string key, int version, Guid? tenantId, string correlationId);
+        Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, Guid? companyId, int? version, Guid correlationId);
+        Task<ConfigResponse> CreateAsync(CreateConfigRequest request, Guid correlationId);
+        Task<ConfigResponse?> UpdateAsync(string key, UpdateConfigRequest request, Guid correlationId);
+        Task<ConfigResponse?> RollbackAsync(string key, int version, Guid? tenantId, Guid correlationId);
     }
 }

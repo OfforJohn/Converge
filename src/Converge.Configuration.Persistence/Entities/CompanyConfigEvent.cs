@@ -21,7 +21,7 @@ namespace Converge.Configuration.Persistence.Entities
         
         // Event metadata
         public string EventType { get; set; } = string.Empty;  // ConfigCreated, ConfigUpdated, ConfigRolledBack
-        public string CorrelationId { get; set; } = string.Empty;
+        public Guid CorrelationId { get; set; }
         public DateTime OccurredAt { get; set; } = DateTime.UtcNow;
         
         // Outbox pattern fields

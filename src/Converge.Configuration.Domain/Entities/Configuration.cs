@@ -1,10 +1,13 @@
 ﻿using Converge.Configuration.Domain.Enums;
+using Converge.Configuration.Domain.Validators;
 using ConvergeERP.Shared.Domain;
+using FluentValidation;
 
 namespace ConvergeErp.Configuration.Domain.Entities
 {
     public class Configuration : BaseEntity
     {
+        private static readonly CreateConfigurationValidator _validator = new();
 
         public string Key { get; private set; } = null!;
         public string Value { get; private set; } = null!;
@@ -25,17 +28,15 @@ namespace ConvergeErp.Configuration.Domain.Entities
             int version,
             Guid creatorId)
         {
-            if (string.IsNullOrWhiteSpace(key))
-                throw new ArgumentException("Config key is required", nameof(key));
-
-            if (string.IsNullOrWhiteSpace(value))
-                throw new ArgumentException("Config value is required", nameof(value));
-
-            if (scope == ConfigurationScope.Tenant && tenantId == null)
-                throw new InvalidOperationException("TenantId is required for TENANT scoped config");
-
-            if (scope == ConfigurationScope.Global && tenantId != null)
-                throw new InvalidOperationException("TenantId must be null for GLOBAL scoped config");
+            // Validate using FluentValidation
+            var parameters = new CreateConfigurationParams(key, value, scope, tenantId, companyId, version, creatorId);
+            var validationResult = _validator.Validate(parameters);
+            
+            if (!validationResult.IsValid)
+            {
+                var errors = string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage));
+                throw new ValidationException(errors, validationResult.Errors);
+            }
 
             Key = key;
             Value = value;
