@@ -101,7 +101,7 @@ namespace Converge.Configuration.UnitTests.Configuration.Application
             var v2 = await _service.UpdateAsync(key, upd, Guid.Parse("00000000-0000-0000-0000-000000000002"));
 
             // rollback to v1
-            var rolled = await _service.RollbackAsync(key, v1.Version, tenantId, Guid.Parse("00000000-0000-0000-0000-000000000003"));
+            var rolled = await _service.RollbackAsync(key, v1.Version, tenantId, null, Guid.Parse("00000000-0000-0000-0000-000000000003"));
             Assert.NotNull(rolled);
             Assert.Equal("v1", rolled!.Value);
             Assert.True(rolled.Version > v2!.Version);

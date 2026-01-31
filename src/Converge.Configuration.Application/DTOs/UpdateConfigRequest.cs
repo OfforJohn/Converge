@@ -31,6 +31,11 @@ namespace Converge.Configuration.DTOs
         /// </summary>
         public Guid? CompanyId { get; set; }
 
+        /// <summary>
+        /// Domain for domain-scoped global configurations
+        /// </summary>
+        public string? Domain { get; set; }
+
         public void Validate()
         {
             if (string.IsNullOrWhiteSpace(Value))

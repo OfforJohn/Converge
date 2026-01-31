@@ -29,16 +29,16 @@ namespace Converge.Configuration.Services
             return $"config:{key}:{tenantPart}:{companyPart}:{versionPart}";
         }
 
-        public async Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, Guid? companyId, int? version, Guid correlationId)
+        public async Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, string? domain, Guid? companyId, Guid correlationId)
         {
-            var cacheKey = MakeCacheKey(key, tenantId, companyId, version);
+            var cacheKey = MakeCacheKey(key, tenantId, companyId, null);
             var cached = await _cache.GetStringAsync(cacheKey);
             if (!string.IsNullOrEmpty(cached))
             {
                 return JsonSerializer.Deserialize<ConfigResponse>(cached, _jsonOptions);
             }
 
-            var result = await _inner.GetEffectiveAsync(key, tenantId, companyId, version, correlationId);
+            var result = await _inner.GetEffectiveAsync(key, tenantId, domain, companyId, correlationId);
             if (result != null)
             {
                 var json = JsonSerializer.Serialize(result, _jsonOptions);
@@ -61,9 +61,9 @@ namespace Converge.Configuration.Services
             return InvalidateAndCall(() => _inner.UpdateAsync(key, request, correlationId), key, request.TenantId, request.CompanyId);
         }
 
-        public Task<ConfigResponse?> RollbackAsync(string key, int version, Guid? tenantId, Guid correlationId)
+        public Task<ConfigResponse?> RollbackAsync(string key, int version, Guid? tenantId, string? domain, Guid correlationId)
         {
-            return InvalidateAndCall(() => _inner.RollbackAsync(key, version, tenantId, correlationId), key, tenantId, null);
+            return InvalidateAndCall(() => _inner.RollbackAsync(key, version, tenantId, domain, correlationId), key, tenantId, null);
         }
 
         private async Task<T> InvalidateAndCall<T>(Func<Task<T>> op, string key, Guid? tenantId, Guid? companyId)

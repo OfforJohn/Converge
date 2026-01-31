@@ -12,7 +12,8 @@ using Converge.Configuration.API.Services;
 using Converge.Configuration.Application.Services;
 using Converge.Configuration.Persistence;
 using Microsoft.EntityFrameworkCore;
-
+using ConvergeERP.Shared.Abstractions;
+using Converge.Configuration.API.Infrastructure;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +21,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 
+
+// Register IHttpContextAccessor and ICurrentUser for DI
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 
 // Configure controllers and JSON options to allow enum values as strings
 builder.Services.AddControllers()
@@ -53,10 +58,7 @@ if (usePostgres)
     builder.Services.AddDbContext<ConfigurationDbContext>(opt =>
     {
         // Configure Npgsql provider with the connection string
-        opt.UseNpgsql(connection);
-
-
-
+        opt.UseNpgsql(connection, b => b.MigrationsAssembly("Converge.Configuration.Persistence"));
 
 
 
@@ -75,16 +77,16 @@ if (usePostgres)
 
     builder.Services.AddScoped<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddScoped<IEventPublisher, OutboxEventPublisher>();
-    
+
     // Register HttpContextAccessor for IScopeContext
     builder.Services.AddHttpContextAccessor();
-    
+
     // Register IScopeContext to get scope from JWT token claims
     builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
-    
+
     // Register TokenScopeService to extract scope/IDs from Bearer tokens
     builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
-    
+
     // Register DbConfigService when using Postgres
     builder.Services.AddScoped<IConfigService, DbConfigService>();
 }
@@ -93,16 +95,16 @@ else
     // Fallback to console implementations for dev
     builder.Services.AddSingleton<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddSingleton<IEventPublisher, Converge.Configuration.Application.Events.OutboxEventPublisher>();
-    
+
     // Register HttpContextAccessor for IScopeContext
     builder.Services.AddHttpContextAccessor();
-    
+
     // Register IScopeContext to get scope from JWT token claims
     builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
-    
+
     // Register TokenScopeService to extract scope/IDs from Bearer tokens
     builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
-    
+
     // Register in-memory config service when NOT using Postgres
     builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
 }
@@ -144,6 +146,9 @@ builder.Services.AddAuthorization(options =>
 });
 
 Console.WriteLine("Effective Postgres: " + builder.Configuration.GetConnectionString("Postgres"));
+
+// Register the custom scope filter
+builder.Services.AddScoped<IScopeFilter, MyScopeFilter>();
 
 // Apply pending EF Core migrations before registering Kafka to avoid background host services
 // attempting to use the database or Kafka before migrations are applied.
@@ -188,38 +193,6 @@ if (usePostgres)
 
 var app = builder.Build();
 
-
-
-// 🔍 TEMP DB DIAGNOSTIC — REMOVE AFTER DEBUGGING
-using (var scope = app.Services.CreateScope())
-{
-    var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-    var connectionString =
-        configuration.GetConnectionString("Postgres")
-        ?? configuration["Persistence:PostgresConnection"];
-
-    await using var conn = new Npgsql.NpgsqlConnection(connectionString);
-    await conn.OpenAsync();
-
-    await using var cmd = new Npgsql.NpgsqlCommand(@"
-        SELECT
-          inet_server_addr(),
-          inet_server_port(),
-          pg_postmaster_start_time(),
-          version();
-    ", conn);
-
-    await using var reader = await cmd.ExecuteReaderAsync();
-    while (await reader.ReadAsync())
-    {
-        Console.WriteLine(
-            $"DB DEBUG => " +
-            $"ADDR={reader.GetValue(0)}, " +
-            $"PORT={reader.GetInt32(1)}, " +
-            $"START={reader.GetDateTime(2)}, " +
-            $"VER={reader.GetString(3)}");
-    }
-}
 
 
 // Configure the HTTP request pipeline.

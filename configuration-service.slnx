@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Converge.Configuration.API/Converge.Configuration.API.csproj" />
+    <Project Path="src/Converge.Configuration.Application/Converge.Configuration.Application.csproj" />
+    <Project Path="src/Converge.Configuration.Domain/Converge.Configuration.Domain.csproj" />
+    <Project Path="src/Converge.Configuration.Persistence/Converge.Configuration.Persistence.csproj" />
+  </Folder>
+</Solution>

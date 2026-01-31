@@ -40,8 +40,8 @@ namespace Converge.Configuration.Application.Handlers.Implementations
             var before = await _service.GetEffectiveAsync(
                 request.Key,
                 request.Request.TenantId,
-                request.Request.CompanyId,
                 null,
+                request.Request.CompanyId,
                 request.CorrelationId
             );
 

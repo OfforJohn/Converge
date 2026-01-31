@@ -19,7 +19,7 @@ namespace Converge.Configuration.Application.Handlers.Implementations
 
         public Task<ConfigResponse?> Handle(GetConfigQuery request)
         {
-            return _service.GetEffectiveAsync(request.Key, request.TenantId, request.CompanyId, request.Version, request.CorrelationId);
+            return _service.GetEffectiveAsync(request.Key, request.TenantId, null, request.CompanyId, request.CorrelationId);
         }
     }
 }

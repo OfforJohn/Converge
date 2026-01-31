@@ -37,8 +37,8 @@ namespace Converge.Configuration.Services
         public Task<ConfigResponse?> GetEffectiveAsync(
             string key,
             Guid? tenantId,
+            string? domain,
             Guid? companyId,
-            int? version,
             Guid correlationId)
         {
             if (!_store.TryGetValue(key, out var versions) || versions.Count == 0)
@@ -46,34 +46,24 @@ namespace Converge.Configuration.Services
 
             Entry? selected;
 
-            if (version.HasValue)
-            {
-                // Explicit version fetch (tenant-specific if tenantId provided)
-                selected = versions.FirstOrDefault(v =>
-                    v.Version == version.Value &&
-                    v.TenantId == tenantId);
-            }
-            else
-            {
-                // 1️⃣ Tenant override (if tenantId provided)
-                selected = tenantId != null
-                    ? versions
-                        .Where(v =>
-                            v.Active &&
-                            v.Scope == ConfigurationScope.Tenant &&
-                            v.TenantId == tenantId)
-                        .OrderByDescending(v => v.Version)
-                        .FirstOrDefault()
-                    : null;
-
-                // 2️⃣ Global fallback
-                selected ??= versions
+            // 1️⃣ Tenant override (if tenantId provided)
+            selected = tenantId != null
+                ? versions
                     .Where(v =>
                         v.Active &&
-                        v.Scope == ConfigurationScope.Global)
+                        v.Scope == ConfigurationScope.Tenant &&
+                        v.TenantId == tenantId)
                     .OrderByDescending(v => v.Version)
-                    .FirstOrDefault();
-            }
+                    .FirstOrDefault()
+                : null;
+
+            // 2️⃣ Global fallback
+            selected ??= versions
+                .Where(v =>
+                    v.Active &&
+                    v.Scope == ConfigurationScope.Global)
+                .OrderByDescending(v => v.Version)
+                .FirstOrDefault();
 
             if (selected == null)
                 return Task.FromResult<ConfigResponse?>(null);
@@ -226,6 +216,7 @@ namespace Converge.Configuration.Services
             string key,
             int version,
             Guid? tenantId,
+            string? domain,
             Guid correlationId)
         {
             if (!_store.TryGetValue(key, out var list) || list.Count == 0)

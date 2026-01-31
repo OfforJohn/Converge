@@ -55,10 +55,7 @@ namespace Converge.Configuration.Persistence
                 entity.Property(e => e.DomainId).HasColumnName("domainid");
                 entity.Property(e => e.EventType).HasColumnName("eventtype").IsRequired();
                 entity.Property(e => e.CorrelationId)
-                    .HasColumnName("correlationid")
-                    .HasConversion(
-                        v => v.ToString(),
-                        v => Guid.Parse(v));
+                    .HasColumnName("correlationid");
                 entity.Property(e => e.OccurredAt).HasColumnName("occurredat");
                 entity.Property(e => e.Dispatched).HasColumnName("dispatched");
 

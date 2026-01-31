@@ -6,7 +6,9 @@ using Converge.Configuration.Persistence;
 using Converge.Configuration.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Converge.Configuration.Services;
-
+using ConvergeERP.Shared.Abstractions;
+using ConvergeERP.Shared.Domain; // Add correct using for BaseEntity
+//
 // Alias ambiguous enums
 using DtoScope = Converge.Configuration.DTOs.ConfigurationScope;
 
@@ -15,10 +17,12 @@ namespace Converge.Configuration.Application.Services
     public class DbConfigService : IConfigService
     {
         private readonly ConfigurationDbContext _db;
+        private readonly ICurrentUser? _currentUser;
 
-        public DbConfigService(ConfigurationDbContext db)
+        public DbConfigService(ConfigurationDbContext db, ICurrentUser? currentUser = null)
         {
             _db = db;
+            _currentUser = currentUser;
         }
 
         private int ToIntScope(DtoScope dtoScope)
@@ -51,31 +55,13 @@ namespace Converge.Configuration.Application.Services
             return null;
         }
 
-        public async Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, Guid? companyId, int? version, Guid correlationId)
+        public async Task<ConfigResponse?> GetEffectiveAsync(string key, Guid? tenantId, string? domain, Guid? companyId, Guid correlationId)
         {
-            if (version.HasValue)
-            {
-                var specific = await _db.OutboxEvents
-                    .Where(c => c.Key == key && c.Version == version.Value && c.TenantId == tenantId)
-                    .OrderByDescending(c => c.Version)
-                    .FirstOrDefaultAsync();
-
-                if (specific == null) return null;
-
-                var scope = FromIntScope(specific.Scope);
-                var domainName = await GetDomainNameAsync(specific.DomainId, scope);
-                
-                return new ConfigResponse
-                {
-                    Key = specific.Key,
-                    Value = specific.Value,
-                    Scope = scope,
-                    TenantId = specific.TenantId,
-                    CompanyId = scope == DtoScope.Company ? specific.CompanyId : null,
-                    Version = specific.Version ?? 0,
-                    Domain = domainName
-                };
-            }
+            // Guard against null tenant/company
+            if (_currentUser?.TenantId == Guid.Empty && tenantId == null)
+                return null;
+            if (_currentUser?.CompanyId == Guid.Empty && companyId == null)
+                return null;
 
             // If companyId is explicitly provided, only search for company-scoped config
             if (companyId != null)
@@ -86,9 +72,7 @@ namespace Converge.Configuration.Application.Services
                     .FirstOrDefaultAsync();
 
                 if (companyConfig == null) return null;
-                
                 var domainName = await GetDomainNameAsync(companyConfig.DomainId, DtoScope.Company);
-                
                 return new ConfigResponse
                 {
                     Key = companyConfig.Key,
@@ -110,9 +94,7 @@ namespace Converge.Configuration.Application.Services
                     .FirstOrDefaultAsync();
 
                 if (tenantConfig == null) return null;
-                
                 var domainName = await GetDomainNameAsync(tenantConfig.DomainId, DtoScope.Tenant);
-                
                 return new ConfigResponse
                 {
                     Key = tenantConfig.Key,
@@ -125,23 +107,23 @@ namespace Converge.Configuration.Application.Services
                 };
             }
 
-            // Neither companyId nor tenantId provided - return global config
+            // Fallback to global config
             var globalConfig = await _db.OutboxEvents
                 .Where(c => c.Key == key && c.Scope == 0)
                 .OrderByDescending(c => c.Version)
                 .FirstOrDefaultAsync();
 
             if (globalConfig == null) return null;
-
+            var globalDomainName = await GetDomainNameAsync(globalConfig.DomainId, DtoScope.Global);
             return new ConfigResponse
             {
                 Key = globalConfig.Key,
                 Value = globalConfig.Value,
                 Scope = DtoScope.Global,
-                TenantId = globalConfig.TenantId,
+                TenantId = null,
                 CompanyId = null,
                 Version = globalConfig.Version ?? 0,
-                Domain = "Global"
+                Domain = globalDomainName
             };
         }
 
@@ -406,7 +388,7 @@ namespace Converge.Configuration.Application.Services
             }
         }
 
-        public async Task<ConfigResponse?> RollbackAsync(string key, int version, Guid? tenantId, Guid correlationId)
+        public async Task<ConfigResponse?> RollbackAsync(string key, int version, Guid? tenantId, string? domain, Guid correlationId)
         {
             using var tx = await _db.Database.BeginTransactionAsync();
 
@@ -462,5 +444,29 @@ namespace Converge.Configuration.Application.Services
             }
         }
 
+    }
+
+    public class MyScopeFilter : IScopeFilter
+    {
+        private readonly ICurrentUser _currentUser;
+
+        public MyScopeFilter(ICurrentUser currentUser)
+        {
+            _currentUser = currentUser;
+        }
+
+        public IQueryable<T> ApplyScopeFilter<T>(IQueryable<T> query) where T : class
+        {
+            if (typeof(T).IsAssignableTo(typeof(BaseEntity)))
+            {
+                var tenantId = _currentUser.TenantId;
+                var companyId = _currentUser.CompanyId;
+
+                query = query.Where(e => EF.Property<Guid>(e, "TenantId") == tenantId &&
+                                         EF.Property<Guid>(e, "CompanyId") == companyId);
+            }
+
+            return query;
+        }
     }
 }

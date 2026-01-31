@@ -42,6 +42,7 @@ namespace Converge.Configuration.Application.Handlers.Implementations
                 request.Key,
                 request.Version,
                 request.TenantId,
+                null,
                 request.CorrelationId
             );
 
