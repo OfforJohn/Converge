@@ -26,6 +26,6 @@ jobs:
         with:
           tags: "${{ secrets.DOCKER_USER }}/docker-build-cloud-demo:latest"
           # For pull requests, export results to the build cache.
-          # Otherwise, push to a registry.
+          # Otherwise, push to a istry.
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
   
