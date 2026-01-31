@@ -55,12 +55,12 @@ if (usePostgres)
         builder.Configuration.GetConnectionString("Postgres")
         ?? builder.Configuration["Persistence:PostgresConnection"]
         ?? throw new InvalidOperationException("Postgres connection string not configured");
+    
+    // Register DbContext FIRST
     builder.Services.AddDbContext<ConfigurationDbContext>(opt =>
     {
         // Configure Npgsql provider with the connection string
         opt.UseNpgsql(connection, b => b.MigrationsAssembly("Converge.Configuration.Persistence"));
-
-
 
         // Enable sensitive data logging and detailed errors in development so EF Core will
         // include parameter values and richer error messages in the logs. This helps when
@@ -75,38 +75,25 @@ if (usePostgres)
         }
     });
 
+    // Register services that depend on DbContext
     builder.Services.AddScoped<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddScoped<IEventPublisher, OutboxEventPublisher>();
-
-    // Register HttpContextAccessor for IScopeContext
-    builder.Services.AddHttpContextAccessor();
-
-    // Register IScopeContext to get scope from JWT token claims
-    builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
-
-    // Register TokenScopeService to extract scope/IDs from Bearer tokens
-    builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
-
-    // Register DbConfigService when using Postgres
     builder.Services.AddScoped<IConfigService, DbConfigService>();
+
+    // Register context and scope services
+    builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
+    builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
 }
 else
 {
     // Fallback to console implementations for dev
     builder.Services.AddSingleton<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddSingleton<IEventPublisher, Converge.Configuration.Application.Events.OutboxEventPublisher>();
-
-    // Register HttpContextAccessor for IScopeContext
-    builder.Services.AddHttpContextAccessor();
-
-    // Register IScopeContext to get scope from JWT token claims
-    builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
-
-    // Register TokenScopeService to extract scope/IDs from Bearer tokens
-    builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
-
-    // Register in-memory config service when NOT using Postgres
     builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
+
+    // Register context and scope services
+    builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
+    builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
 }
 
 // Register request dispatcher and handlers
