@@ -27,5 +27,8 @@ namespace Converge.Configuration.Persistence.Entities
         
         // Outbox pattern field
         public bool Dispatched { get; set; } = false;
+
+        // Number of dispatch attempts
+        public int Attempts { get; set; } = 0;
     }
 }

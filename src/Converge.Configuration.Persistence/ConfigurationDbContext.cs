@@ -58,6 +58,7 @@ namespace Converge.Configuration.Persistence
                     .HasColumnName("correlationid");
                 entity.Property(e => e.OccurredAt).HasColumnName("occurredat");
                 entity.Property(e => e.Dispatched).HasColumnName("dispatched");
+                entity.Property(e => e.Attempts).HasColumnName("attempts");
 
                 // Indexes for efficient querying
                 entity.HasIndex(e => e.Dispatched);
