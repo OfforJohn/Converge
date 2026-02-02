@@ -22,7 +22,7 @@ services:
     environment:
       - Persistence__UsePostgres=true
       - Persistence__ApplyMigrationsOnStartup=true
-      - ConnectionStrings__Postgres=Host=pg-773c760-offorchukwuebuka1101-de8d.j.aivencloud.com;Port=13936;Database=defaultdb;Username=avnadmin;Password=AVNS_TWEYsWHrKxEUA7X_X22;SSL Mode=Require;
+      - ConnectionStrings__Postgres=${POSTGRES_CONNECTION_STRING}
       - ASPNETCORE_ENVIRONMENT=Production
     ports:
       - "8080:8080"
