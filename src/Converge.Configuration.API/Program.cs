@@ -55,12 +55,12 @@ if (usePostgres)
         builder.Configuration.GetConnectionString("Postgres")
         ?? builder.Configuration["Persistence:PostgresConnection"]
         ?? throw new InvalidOperationException("Postgres connection string not configured");
-    
-    // Register DbContext FIRST
     builder.Services.AddDbContext<ConfigurationDbContext>(opt =>
     {
         // Configure Npgsql provider with the connection string
         opt.UseNpgsql(connection, b => b.MigrationsAssembly("Converge.Configuration.Persistence"));
+
+
 
         // Enable sensitive data logging and detailed errors in development so EF Core will
         // include parameter values and richer error messages in the logs. This helps when
@@ -75,25 +75,38 @@ if (usePostgres)
         }
     });
 
-    // Register services that depend on DbContext
     builder.Services.AddScoped<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddScoped<IEventPublisher, OutboxEventPublisher>();
-    builder.Services.AddScoped<IConfigService, DbConfigService>();
 
-    // Register context and scope services
+    // Register HttpContextAccessor for IScopeContext
+    builder.Services.AddHttpContextAccessor();
+
+    // Register IScopeContext to get scope from JWT token claims
     builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
+
+    // Register TokenScopeService to extract scope/IDs from Bearer tokens
     builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
+
+    // Register DbConfigService when using Postgres
+    builder.Services.AddScoped<IConfigService, DbConfigService>();
 }
 else
 {
     // Fallback to console implementations for dev
     builder.Services.AddSingleton<IAuditService, Converge.Configuration.Application.Services.ConsoleAuditService>();
     builder.Services.AddSingleton<IEventPublisher, Converge.Configuration.Application.Events.OutboxEventPublisher>();
-    builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
 
-    // Register context and scope services
+    // Register HttpContextAccessor for IScopeContext
+    builder.Services.AddHttpContextAccessor();
+
+    // Register IScopeContext to get scope from JWT token claims
     builder.Services.AddScoped<IScopeContext, HttpScopeContext>();
+
+    // Register TokenScopeService to extract scope/IDs from Bearer tokens
     builder.Services.AddScoped<ITokenScopeService, TokenScopeService>();
+
+    // Register in-memory config service when NOT using Postgres
+    builder.Services.AddSingleton<IConfigService, InMemoryConfigService>();
 }
 
 // Register request dispatcher and handlers
@@ -145,21 +158,85 @@ if (usePostgres)
     {
         try
         {
+            Console.WriteLine("\n========================================");
+            Console.WriteLine("🔧 APPLYING DATABASE MIGRATIONS");
+            Console.WriteLine("========================================");
+            
+            Console.WriteLine("📦 Building temporary service provider...");
             using var tempProvider = builder.Services.BuildServiceProvider();
             using var scope = tempProvider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
-            Console.WriteLine("Applying pending EF Core migrations...");
-            db.Database.Migrate();
-            Console.WriteLine("Database migrations applied.");
+            
+            Console.WriteLine("📡 Testing database connection...");
+            await db.Database.OpenConnectionAsync();
+            Console.WriteLine("✅ Database connection successful");
+            await db.Database.CloseConnectionAsync();
+            
+            Console.WriteLine("\n📋 Checking for pending migrations...");
+            var pendingMigrations = (await db.Database.GetPendingMigrationsAsync()).ToList();
+            
+            if (pendingMigrations.Any())
+            {
+                Console.WriteLine($"Found {pendingMigrations.Count} pending migrations:");
+                foreach (var migration in pendingMigrations)
+                {
+                    Console.WriteLine($"   ⏳ {migration}");
+                }
+                
+                Console.WriteLine("\n🚀 Applying migrations...");
+                db.Database.Migrate();
+                Console.WriteLine("✅ All migrations applied successfully!");
+            }
+            else
+            {
+                Console.WriteLine("✅ Database is up-to-date. No migrations needed.");
+            }
+            
+            // Verify tables exist
+            Console.WriteLine("\n🔍 Verifying tables...");
+            var tables = await db.Database.SqlQuery<string>($@"
+                SELECT table_name FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
+                .ToListAsync();
+            
+            if (tables.Any())
+            {
+                Console.WriteLine($"✅ Found {tables.Count} tables:");
+                foreach (var table in tables)
+                {
+                    Console.WriteLine($"   📊 {table}");
+                }
+            }
+            else
+            {
+                throw new InvalidOperationException("❌ No tables found after migration! Migrations may have failed.");
+            }
+            
+            Console.WriteLine("========================================\n");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to apply migrations: {ex}");
+            Console.WriteLine("\n========================================");
+            Console.WriteLine("❌ CRITICAL ERROR: MIGRATIONS FAILED");
+            Console.WriteLine("========================================");
+            Console.WriteLine($"Error Message: {ex.Message}");
+            Console.WriteLine($"Exception Type: {ex.GetType().Name}");
+            
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"\nInner Exception: {ex.InnerException.Message}");
+            }
+            
+            Console.WriteLine($"\nStack Trace:\n{ex.StackTrace}");
+            Console.WriteLine("========================================\n");
+            
+            // Re-throw to prevent app from starting with missing tables
+            throw new InvalidOperationException("Database migrations failed. Application cannot start.", ex);
         }
     }
     else
     {
-        Console.WriteLine("Skipping applying EF Core migrations on startup (Persistence:ApplyMigrationsOnStartup=false).");
+        Console.WriteLine("⏭️  Skipping EF Core migrations on startup (Persistence:ApplyMigrationsOnStartup=false)");
     }
 
     // Now it's safe to register KafkaDispatcher; if migrations failed above we'll still avoid
