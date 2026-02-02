@@ -19,28 +19,25 @@ services:
   api:
     image: jon101/docker-build-cloud-demo:latest
     container_name: cloud-demo
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
       - Persistence__UsePostgres=true
       - Persistence__ApplyMigrationsOnStartup=true
-      - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=mydb;Username=postgres;Password=secret
+      - ConnectionStrings__Postgres=Host=pg-773c760-offorchukwuebuka1101-de8d.j.aivencloud.com;Port=13936;Database=defaultdb;Username=avnadmin;Password=AVNS_TWEYsWHrKxEUA7X_X22;SSL Mode=Require;
       - ASPNETCORE_ENVIRONMENT=Production
     ports:
       - "8080:8080"
 
-  pgadmin:                     # <-- Add this b
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      postgres:
-        condition: service_healthy
+  # pgadmin:  Only needed if you want to use pgAdmin to manage the Postgres DB Oth
+  #   image: dpage/pgadmin4
+  #   container_name: pgadmin
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@example.com
+  #     PGADMIN_DEFAULT_PASSWORD: admin
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
 
 volumes:
   postgres_data:
