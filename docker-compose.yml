@@ -2,8 +2,10 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: postgres-db
-    env_file:
-      - .env.postgres
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
     ports:
       - "5433:5432"
     volumes:
@@ -20,16 +22,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    env_file:
-      - .env.api
+    environment:
+      - Persistence__UsePostgres=true
+      - Persistence__ApplyMigrationsOnStartup=true
+      - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=mydb;Username=postgres;Password=secret
+      - ASPNETCORE_ENVIRONMENT=Production
     ports:
       - "8080:8080"
 
-  pgadmin:
+  pgadmin:                     # <-- Add this block
     image: dpage/pgadmin4
     container_name: pgadmin
-    env_file:
-      - .env.pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
     ports:
       - "5050:80"
     depends_on:
